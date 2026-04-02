@@ -22,5 +22,8 @@ tst/test_log.txt
 *.swp
 Lorene
 
+# Temporary test files
+tst/test_log.txt
+
 # python cache
 __pycache__/
