@@ -80,22 +80,23 @@ class Chemistry {
   }
 
   /*!
-   * \brief Return the name of the chemical species at the grid field index provided
+   * \brief Return the name of the chemical species at the grid field index
+   * provided
    *
    * \param scalar_idx The index in the grid to the passive scalar in question
    * \return std::string The name of the chemical species
    */
-  std::string GetSpeciesNames(int const &scalar_idx);
+  std::string GetSpeciesNames(int const& scalar_idx);
 
   // ===================
   // Getters and Setters
   // ===================
-  int get_chemistry_scalars_start_idx() const {
-    return chemistry_scalars_start_idx;
+  int get_chemistry_scalars_first_idx() const {
+    return chemistry_scalars_first_idx;
   }
   // The index of the final chemistry scalar
-  int get_chemistry_scalars_stop_idx() const {
-    return chemistry_scalars_start_idx + nscalars_chemistry - 1;
+  int get_chemistry_scalars_last_idx() const {
+    return chemistry_scalars_first_idx + nscalars_chemistry - 1;
   }
 
  private:
@@ -111,10 +112,19 @@ class Chemistry {
   int inline static nscalars_pre_chemistry;
 
   // The beginning index of passive scalars reserved for chemisty
-  int const chemistry_scalars_start_idx;
+  int const chemistry_scalars_first_idx;
 
   // Get the correct u0 array
   DvceArray5D<Real> GetU0();
+
+  // Get bounds for looping over the grid
+  /*!
+   * \brief Get loop limits for looping over all the cells.
+   *
+   * \return std::tuple<Kokkos::Array<int, 4>, Kokkos::Array<int, 4>> The
+   * MDRangePolicy start and end
+   */
+  std::tuple<Kokkos::Array<int, 4>, Kokkos::Array<int, 4>> LoopLimitsAllCells();
 
   // Functions for setting up
   int ComputeChemistryScalarsStartIndex();
