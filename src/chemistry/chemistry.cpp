@@ -12,6 +12,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <tuple>
 
 #include "athena.hpp"
 #include "hydro/hydro.hpp"
@@ -49,7 +50,7 @@ TaskStatus Chemistry::TestKernel(Driver* d, int stage) {
   auto u0 = GetU0();
 
   // Get all the loop limits
-  auto const [start_4, end_4] = LoopLimitsAllCells();
+  auto const[start_4, end_4] = LoopLimitsAllCells();
   int const field_start_idx = chemistry_scalars_first_idx;
   int const field_stop_idx = get_chemistry_scalars_last_idx() + 1;
 
