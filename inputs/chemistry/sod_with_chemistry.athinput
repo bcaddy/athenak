@@ -48,8 +48,8 @@ gamma       = 1.4      # gamma = C_p/C_v
 nscalars    = 2        # number of passive scalars in hydro
 
 <chemistry>
-chemistry_network = h2       # placeholder
-ode_solver        = sundials # placeholder
+chemistry_network = H2            # Chemistry network to be used
+ode_solver        = forward_euler # ODE solver to be used
 
 <problem>
 pgen_name = shock_tube  # problem generator name
