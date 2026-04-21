@@ -29,7 +29,6 @@ add_executable(
 
         chemistry/chemistry_tasks.cpp
         chemistry/chemistry.cpp
-        chemistry/ode_solver/forward_euler.cpp
 
         coordinates/adm.cpp
         coordinates/coordinates.cpp
