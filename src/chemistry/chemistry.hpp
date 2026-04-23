@@ -16,6 +16,7 @@
 
 #include "athena.hpp"
 #include "bvals/bvals.hpp"
+#include "chemistry/network/chemistry_networks.hpp"
 #include "parameter_input.hpp"
 #include "tasklist/task_list.hpp"
 
@@ -75,9 +76,15 @@ class Chemistry {
       nscalars_pre_chemistry = nscalars;
     }
 
-    // This is temporary, eventually it will return a value dependent on the
-    // chemistry module specified
-    return 3;
+    const std::string network = pin->GetString("chemistry", "network");
+    int num_species;
+    // We need to take number of equations minus 1 since neqs includes the
+    // internal energy equation
+    if (network == "H2") {
+      num_species = H2Network::neqs - 1;
+    }
+
+    return num_species;
   }
 
   /*!
