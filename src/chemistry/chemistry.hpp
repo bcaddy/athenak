@@ -26,7 +26,7 @@ namespace chemistry {
 //  \brief container to hold TaskIDs of all chemistry tasks
 struct ChemistryTaskIDs {
   TaskID update_chemistry;
-  // TaskID PrimToCons;
+  TaskID p2c;
 };
 
 //! \class Chemistry
@@ -53,7 +53,16 @@ class Chemistry {
   void AssembleChemistryTasks(
       std::map<std::string, std::shared_ptr<TaskList>> tl);
 
+  /*!
+   * \brief Updates the chemistry abundances and internal energy
+   */
   TaskStatus UpdateChemistry(Driver* d, int stage);
+
+  /*!
+   * \brief Updates the conserved grid with the updated values from the
+   * primitive grid
+   */
+  TaskStatus PrimToCons(Driver* pdrive, int stage);
 
   /*!
    * \brief Compute the number of required passive scalars that the chemistry

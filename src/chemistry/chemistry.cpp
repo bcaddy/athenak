@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "athena.hpp"
+#include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
 #include "mhd/mhd.hpp"
 
@@ -171,6 +172,29 @@ TaskStatus Chemistry::UpdateChemistry(Driver* d, int stage) {
     std::cerr << "The Forwared Euler ODE solver failed to converge within "
               << max_iterations << "cycles." << std::endl;
     return TaskStatus::fail;
+  }
+
+  return TaskStatus::complete;
+}
+
+TaskStatus Chemistry::PrimToCons(Driver* pdrive, int stage) {
+  auto& indcs = pmy_pack->pmesh->mb_indcs;
+  int& ng = indcs.ng;
+  int n1m1 = indcs.nx1 + 2 * ng - 1;
+  int n2m1 = (indcs.nx2 > 1) ? (indcs.nx2 + 2 * ng - 1) : 0;
+  int n3m1 = (indcs.nx3 > 1) ? (indcs.nx3 + 2 * ng - 1) : 0;
+
+  if (is_hydro_enabled) {
+    auto peos = pmy_pack->phydro->peos;
+    auto u0 = pmy_pack->phydro->u0;
+    auto w0 = pmy_pack->phydro->w0;
+    peos->PrimToCons(w0, u0, 0, n1m1, 0, n2m1, 0, n3m1);
+  } else {  // if (is_mhd_enabled) {
+    auto peos = pmy_pack->pmhd->peos;
+    auto u0 = pmy_pack->pmhd->u0;
+    auto bcc = pmy_pack->pmhd->bcc0;
+    auto w0 = pmy_pack->pmhd->w0;
+    peos->PrimToCons(w0, bcc, u0, 0, n1m1, 0, n2m1, 0, n3m1);
   }
 
   return TaskStatus::complete;
