@@ -23,8 +23,8 @@ void Chemistry::AssembleChemistryTasks(
   // assemble "after_timeintegrator" task list
   id.update_chemistry = tl["after_timeintegrator"]->AddTask(
       &Chemistry::UpdateChemistry, this, none);
-  id.p2c = tl["after_timeintegrator"]->AddTask(&Chemistry::PrimToCons, this,
-                                               id.update_chemistry);
+  id.prim_to_cons = tl["after_timeintegrator"]->AddTask(
+      &Chemistry::PrimToCons, this, id.update_chemistry);
 }
 
 }  // namespace chemistry

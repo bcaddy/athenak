@@ -26,7 +26,7 @@ namespace chemistry {
 //  \brief container to hold TaskIDs of all chemistry tasks
 struct ChemistryTaskIDs {
   TaskID update_chemistry;
-  TaskID p2c;
+  TaskID prim_to_cons;
 };
 
 //! \class Chemistry
