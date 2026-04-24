@@ -13,8 +13,10 @@
 
 namespace chemistry {
 struct H2Network {
-  H2Network(Real const units_time_cgs, Real const units_energy_density_cgs)
-      : units_time_cgs(units_time_cgs),
+  KOKKOS_FUNCTION H2Network(Real const density, Real const units_time_cgs,
+                            Real const units_energy_density_cgs)
+      : n_H(density),
+        units_time_cgs(units_time_cgs),
         units_energy_density_cgs(units_energy_density_cgs) {}
 
   // Number of equations

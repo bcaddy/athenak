@@ -25,7 +25,8 @@ namespace chemistry {
 //! \struct ChemistryTaskIDs
 //  \brief container to hold TaskIDs of all chemistry tasks
 struct ChemistryTaskIDs {
-  TaskID test_kernel;
+  TaskID update_chemistry;
+  // TaskID PrimToCons;
 };
 
 //! \class Chemistry
@@ -52,7 +53,7 @@ class Chemistry {
   void AssembleChemistryTasks(
       std::map<std::string, std::shared_ptr<TaskList>> tl);
 
-  TaskStatus TestKernel(Driver* d, int stage);
+  TaskStatus UpdateChemistry(Driver* d, int stage);
 
   /*!
    * \brief Compute the number of required passive scalars that the chemistry
@@ -122,8 +123,9 @@ class Chemistry {
   // The beginning index of passive scalars reserved for chemisty
   int const chemistry_scalars_first_idx;
 
-  // Get the correct u0 array
+  // Get the correct conserved or primitive arrays array
   DvceArray5D<Real> GetU0();
+  DvceArray5D<Real> GetW0();
 
   // Get bounds for looping over the grid
   /*!
