@@ -13,9 +13,11 @@
 
 namespace chemistry {
 struct H2Network {
-  KOKKOS_FUNCTION H2Network(Real const density, Real const units_time_cgs,
+  KOKKOS_FUNCTION H2Network(Real const density, Real const density_cgs,
+                            Real const mu, Real const hydrogen_mass_cgs,
+                            Real const units_time_cgs,
                             Real const units_energy_density_cgs)
-      : n_H(density),
+      : n_H(density * density_cgs / (mu * hydrogen_mass_cgs)),
         units_time_cgs(units_time_cgs),
         units_energy_density_cgs(units_energy_density_cgs) {}
 
@@ -30,8 +32,7 @@ struct H2Network {
   };
 
   // ----- cell values -----
-  Real n_H;  // The number density of hydrogen
-  Real internal_energy;
+  Real const n_H;  // The number density of hydrogen
 
   // ----- unit conversion factors -----
   Real const units_time_cgs;
@@ -56,7 +57,7 @@ struct H2Network {
 
     static constexpr Real T_floor = 1.;  // temperature floor for cooling
     // energy per hydrogen atom
-    const Real E_ergs = internal_energy * units_energy_density_cgs / n_H;
+    const Real E_ergs = y(IIE) * units_energy_density_cgs / n_H;
     const Real T = E_ergs / Thermo::CvCold(x_H2, x_He, x_e);
     if (T < T_floor) {
       f(IIE) = 0;

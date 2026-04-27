@@ -58,7 +58,7 @@ TaskStatus Chemistry::UpdateChemistry(Driver* d, int stage) {
   // ----- Variables for the Forward Euler Solver -----
   // For reporting if the forward euler solver didn't converge within
   // max_iterations
-  Kokkos::View<bool> forward_euler_failure("forward_euler_failure", false);
+  DvceArray0D<bool> forward_euler_failure("forward_euler_failure", false);
   static constexpr Real small_ = 1024. * std::numeric_limits<float>::min();
   // TODO convert these into runtime arguments
   // The floor for chemical abundances
@@ -71,6 +71,9 @@ TaskStatus Chemistry::UpdateChemistry(Driver* d, int stage) {
   // ----- Get the unit conversions we'll need -----
   Real const time_cgs = pmy_pack->punit->time_cgs();
   Real const energy_density_cgs = pmy_pack->punit->pressure_cgs();
+  Real const density_cgs = pmy_pack->punit->density_cgs();
+  Real const mu = pmy_pack->punit->mu();  // mean molecular weight
+  Real const hydrogen_mass_cgs = pmy_pack->punit->hydrogen_mass_cgs;
 
   // ----- Get all the loop limits and generate the parallel policy ------
   // NOLINTNEXTLINE(whitespace/braces)
@@ -84,7 +87,8 @@ TaskStatus Chemistry::UpdateChemistry(Driver* d, int stage) {
       KOKKOS_LAMBDA(const int& mb_idx, const int& k, const int& j,
                     const int& i) {
         // Create the chemisty object
-        H2Network chemistry_network(w0(mb_idx, IDN, k, j, i), time_cgs,
+        H2Network chemistry_network(w0(mb_idx, IDN, k, j, i), density_cgs, mu,
+                                    hydrogen_mass_cgs, time_cgs,
                                     energy_density_cgs);
 
         // ------ Thread local arrays for ODE stuff ------
@@ -96,14 +100,14 @@ TaskStatus Chemistry::UpdateChemistry(Driver* d, int stage) {
 
         // ------ Load cell values ------
         // Internal energy
-        y[H2Network::IIE] = w0(mb_idx, IEN, k, j, i);
+        y(H2Network::IIE) = w0(mb_idx, IEN, k, j, i);
 
         // Chemistry scalars. The loop is based off of the chemical
         // network's number of equations since that's known at compile time,
         // enabling more loop optimizations
         int grid_idx = species_start_idx;
         for (int s_idx = 1; s_idx < H2Network::neqs; s_idx++) {
-          y[s_idx] = w0(mb_idx, grid_idx, k, j, i);
+          y(s_idx) = w0(mb_idx, grid_idx, k, j, i);
           grid_idx += 1;
         }
 
@@ -122,11 +126,11 @@ TaskStatus Chemistry::UpdateChemistry(Driver* d, int stage) {
             dt_subcycle = Kokkos::reduction_identity<Real>::min();
             for (int s_idx = 0; s_idx < H2Network::neqs; s_idx++) {
               // put floor in species abundance
-              Real const yf = Kokkos::max(y[s_idx], yfloor);
+              Real const yf = Kokkos::max(y(s_idx), yfloor);
 
               // Compute the value to reduce
               dt_subcycle = Kokkos::min(dt_subcycle,
-                                        Kokkos::abs(yf / (f[s_idx] + small_)));
+                                        Kokkos::abs(yf / (f(s_idx) + small_)));
             }
             dt_subcycle = cfl_cool_subcycle * dt_subcycle;
 
@@ -138,7 +142,7 @@ TaskStatus Chemistry::UpdateChemistry(Driver* d, int stage) {
           // Advance one subcycle
           {
             for (int s_idx = 0; s_idx < H2Network::neqs; s_idx++) {
-              y[s_idx] += f[s_idx] * dt_subcycle;
+              y(s_idx) += f(s_idx) * dt_subcycle;
             }
           }
 
@@ -155,12 +159,12 @@ TaskStatus Chemistry::UpdateChemistry(Driver* d, int stage) {
 
         // ------ Write cell values back out ------
         // Internal energy
-        w0(mb_idx, IEN, k, j, i) = y[H2Network::IIE];
+        w0(mb_idx, IEN, k, j, i) = y(H2Network::IIE);
 
         // Chemistry scalars
         grid_idx = species_start_idx;
         for (int s_idx = 1; s_idx < H2Network::neqs; s_idx++) {
-          w0(mb_idx, grid_idx, k, j, i) = y[s_idx];
+          w0(mb_idx, grid_idx, k, j, i) = y(s_idx);
           grid_idx += 1;
         }
       });
