@@ -10,6 +10,7 @@
 
 #include "athena.hpp"
 #include "chemistry/thermo/thermo.hpp"
+#include "utils/register_array.hpp"
 
 namespace chemistry {
 struct H2Network {
@@ -21,10 +22,15 @@ struct H2Network {
         units_time_cgs(units_time_cgs),
         units_energy_density_cgs(units_energy_density_cgs) {}
 
-  // Number of equations
+  // ----- Number of equations -----
   static constexpr int neqs = 3;
 
-  // Species indices within the ODE system
+  // ----- Arrays to store ODE state -----
+  RegisterArray<Real, neqs> y; // The current state
+  RegisterArray<Real, neqs> f; // The results of evaluating the ODEs
+
+
+  // ----- Species indices within the ODE system ------
   enum {
     IIE = 0,  // internal energy
     IH2 = 1,  // H_2
@@ -45,11 +51,7 @@ struct H2Network {
   static constexpr Real k_cr = 3.0 * xi_cr;
 
   // ----- Member Functions -----
-  template <class vec_type1, class vec_type2>
-  KOKKOS_FUNCTION void evaluate_function(const double /*t*/,
-                                         const double /*dt*/,
-                                         const vec_type1& y,
-                                         const vec_type2& f) {
+  KOKKOS_FUNCTION void evaluate_function() {
     // ----- Internal energy equation -----
     static constexpr Real x_He = 0.1;
     static constexpr Real x_e = 0.0;
@@ -81,27 +83,7 @@ struct H2Network {
     for (size_t i = 1; i < neqs; i++) {
       f(i) *= units_time_cgs;
     }
-
-    // original equations
-    // f(0) = -0.04 * y(0) + 1.e4 * y(1) * y(2);
-    // f(1) = 0.04 * y(0) - 1.e4 * y(1) * y(2) - 3.e7 * y(1) * y(1);
-    // f(2) = 3.e7 * y(1) * y(1);
   }
-
-  // template <class vec_type, class mat_type>
-  // KOKKOS_FUNCTION void evaluate_jacobian(const double /*t*/,
-  //                                        const double /*dt*/, const vec_type&
-  //                                        y, const mat_type& jac) {
-  //   jac(0, 0) = -0.04;
-  //   jac(0, 1) = 1.e4 * y(2);
-  //   jac(0, 2) = 1.e4 * y(1);
-  //   jac(1, 0) = 0.04;
-  //   jac(1, 1) = -1.e4 * y(2) - 3.e7 * 2.0 * y(1);
-  //   jac(1, 2) = -1.e4 * y(1);
-  //   jac(2, 0) = 0.0;
-  //   jac(2, 1) = 3.e7 * 2.0 * y(1);
-  //   jac(2, 2) = 0.0;
-  // }
 };
 }  // namespace chemistry
 #endif  // CHEMISTRY_NETWORK_H2_HPP_

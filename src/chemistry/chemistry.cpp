@@ -89,27 +89,19 @@ TaskStatus Chemistry::UpdateChemistry(Driver* d, int stage) {
       KOKKOS_LAMBDA(const int& mb_idx, const int& k, const int& j,
                     const int& i) {
         // Create the chemisty object
-        H2Network chemistry_network(w0(mb_idx, IDN, k, j, i), density_cgs, mu,
-                                    hydrogen_mass_cgs, time_cgs,
-                                    energy_density_cgs);
-
-        // ------ Thread local arrays for ODE stuff ------
-        // TODO(Bob Caddy) move these into the chemistry network
-        Real y_raw[H2Network::neqs], f_raw[H2Network::neqs];
-        Kokkos::View<Real[H2Network::neqs],
-                     Kokkos::MemoryTraits<Kokkos::Unmanaged>>
-            y(y_raw), f(f_raw);
+        H2Network chem_net(w0(mb_idx, IDN, k, j, i), density_cgs, mu,
+                           hydrogen_mass_cgs, time_cgs, energy_density_cgs);
 
         // ------ Load cell values ------
         // Internal energy
-        y(H2Network::IIE) = w0(mb_idx, IEN, k, j, i);
+        chem_net.y(H2Network::IIE) = w0(mb_idx, IEN, k, j, i);
 
         // Chemistry scalars. The loop is based off of the chemical
         // network's number of equations since that's known at compile time,
         // enabling more loop optimizations
         int grid_idx = species_start_idx;
         for (int s_idx = 1; s_idx < H2Network::neqs; s_idx++) {
-          y(s_idx) = w0(mb_idx, grid_idx, k, j, i);
+          chem_net.y(s_idx) = w0(mb_idx, grid_idx, k, j, i);
           grid_idx += 1;
         }
 
@@ -119,7 +111,7 @@ TaskStatus Chemistry::UpdateChemistry(Driver* d, int stage) {
         Real t_end = t_start + dt;
         while (t_now < t_end) {
           // Evaluate the ODEs
-          chemistry_network.evaluate_function(t_now, dt, y, f);
+          chem_net.evaluate_function();
 
           // Compute the chemistry time scale
           Real dt_subcycle;
@@ -128,11 +120,11 @@ TaskStatus Chemistry::UpdateChemistry(Driver* d, int stage) {
             dt_subcycle = Kokkos::reduction_identity<Real>::min();
             for (int s_idx = 0; s_idx < H2Network::neqs; s_idx++) {
               // put floor in species abundance
-              Real const yf = Kokkos::max(y(s_idx), yfloor);
+              Real const yf = Kokkos::max(chem_net.y(s_idx), yfloor);
 
               // Compute the value to reduce
-              dt_subcycle = Kokkos::min(dt_subcycle,
-                                        Kokkos::abs(yf / (f(s_idx) + small_)));
+              dt_subcycle = Kokkos::min(
+                  dt_subcycle, Kokkos::abs(yf / (chem_net.f(s_idx) + small_)));
             }
             dt_subcycle = cfl_cool_subcycle * dt_subcycle;
 
@@ -144,7 +136,7 @@ TaskStatus Chemistry::UpdateChemistry(Driver* d, int stage) {
           // Advance one subcycle
           {
             for (int s_idx = 0; s_idx < H2Network::neqs; s_idx++) {
-              y(s_idx) += f(s_idx) * dt_subcycle;
+              chem_net.y(s_idx) += chem_net.f(s_idx) * dt_subcycle;
             }
           }
 
@@ -161,12 +153,12 @@ TaskStatus Chemistry::UpdateChemistry(Driver* d, int stage) {
 
         // ------ Write cell values back out ------
         // Internal energy
-        w0(mb_idx, IEN, k, j, i) = y(H2Network::IIE);
+        w0(mb_idx, IEN, k, j, i) = chem_net.y(H2Network::IIE);
 
         // Chemistry scalars
         grid_idx = species_start_idx;
         for (int s_idx = 1; s_idx < H2Network::neqs; s_idx++) {
-          w0(mb_idx, grid_idx, k, j, i) = y(s_idx);
+          w0(mb_idx, grid_idx, k, j, i) = chem_net.y(s_idx);
           grid_idx += 1;
         }
       });
