@@ -8,7 +8,9 @@
 //! functions
 #include "chemistry/chemistry.hpp"
 
+#include <algorithm>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <string>
 #include <tuple>
@@ -60,7 +62,7 @@ TaskStatus Chemistry::UpdateChemistry(Driver* d, int stage) {
   // max_iterations
   DvceArray0D<bool> forward_euler_failure("forward_euler_failure", false);
   static constexpr Real small_ = 1024. * std::numeric_limits<float>::min();
-  // TODO convert these into runtime arguments
+  // TODO(Bob Caddy) convert these into runtime arguments
   // The floor for chemical abundances
   Real const yfloor = 1.0e-3;
   // The CFL number for the forward euler subcycling
@@ -92,7 +94,7 @@ TaskStatus Chemistry::UpdateChemistry(Driver* d, int stage) {
                                     energy_density_cgs);
 
         // ------ Thread local arrays for ODE stuff ------
-        // TODO move these into the chemistry network
+        // TODO(Bob Caddy) move these into the chemistry network
         Real y_raw[H2Network::neqs], f_raw[H2Network::neqs];
         Kokkos::View<Real[H2Network::neqs],
                      Kokkos::MemoryTraits<Kokkos::Unmanaged>>
