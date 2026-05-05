@@ -29,8 +29,6 @@
 void ProblemGenerator::H2_evolution(ParameterInput* pin, const bool restart) {
   if (restart) return;
 
-  std::cout << "in H2 problem generator." << std::endl;
-
   // capture variables for the kernel
   auto& indcs = pmy_mesh_->mb_indcs;
   int& is = indcs.is;
