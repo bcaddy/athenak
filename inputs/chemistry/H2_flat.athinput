@@ -1,43 +1,43 @@
 # AthenaXXX input file for Sod's hydrodynamic shocktube
 
 <comment>
-problem   = Sod's shock tube
-reference = Sod, G.A., JCP 27, pp. 1-31 (1978)
+problem   = H-H2 chemistry with analytic solution
+reference = Section 4.1 in Gong et al. 2023, arXiv:2305.04965
 
 <job>
-basename  = Sod       # problem ID: basename of output filenames
+basename  = chem_H2   # problem ID: basename of output filenames
 
 <mesh>
 nghost    = 2         # Number of ghost cells
-nx1       = 256       # Number of zones in X1-direction
+nx1       = 4         # Number of zones in X1-direction
 x1min     = -0.5      # minimum value of X1
 x1max     = 0.5       # maximum value of X1
-ix1_bc    = outflow   # Inner-X1 boundary condition flag
-ox1_bc    = outflow   # Outer-X1 boundary condition flag
+ix1_bc    = periodic  # Inner-X1 boundary condition flag
+ox1_bc    = periodic  # Outer-X1 boundary condition flag
 
-nx2       = 1         # Number of zones in X2-direction
+nx2       = 4         # Number of zones in X2-direction
 x2min     = -0.5      # minimum value of X2
 x2max     = 0.5       # maximum value of X2
 ix2_bc    = periodic  # Inner-X2 boundary condition flag
 ox2_bc    = periodic  # Outer-X2 boundary condition flag
 
-nx3       = 1         # Number of zones in X3-direction
+nx3       = 4         # Number of zones in X3-direction
 x3min     = -0.5      # minimum value of X3
 x3max     = 0.5       # maximum value of X3
 ix3_bc    = periodic  # Inner-X3 boundary condition flag
 ox3_bc    = periodic  # Outer-X3 boundary condition flag
 
 <meshblock>
-nx1       = 256       # Number of cells in each MeshBlock, X1-dir
-nx2       = 1         # Number of cells in each MeshBlock, X2-dir
-nx3       = 1         # Number of cells in each MeshBlock, X3-dir
+nx1       = 4         # Number of cells in each MeshBlock, X1-dir
+nx2       = 4         # Number of cells in each MeshBlock, X2-dir
+nx3       = 4         # Number of cells in each MeshBlock, X3-dir
 
 <time>
 evolution  = dynamic   # dynamic/kinematic/static
 integrator = rk2       # time integration algorithm
 cfl_number = 0.8       # The Courant, Friedrichs, & Lewy (CFL) Number
 nlim       = -1        # cycle limit
-tlim       = 0.25      # time limit
+tlim       = 50        # time limit, 50Myr
 ndiag      = 1         # cycles between diagostic output
 
 <hydro>
@@ -45,7 +45,7 @@ eos         = ideal    # EOS type
 reconstruct = plm      # spatial reconstruction method
 rsolver     = llf      # Riemann-solver to be used
 gamma       = 1.4      # gamma = C_p/C_v
-nscalars    = 2        # number of passive scalars in hydro
+nscalars    = 0        # number of passive scalars in hydro
 
 <units> 
 # ISM units
@@ -59,21 +59,10 @@ network    = H2            # Chemistry network to be used
 ode_solver = forward_euler # ODE solver to be used
 
 <problem>
-pgen_name = shock_tube  # problem generator name
-shock_dir  = 1          # Shock Direction -- (1,2,3) = (x1,x2,x3)
-xshock     = 0.0        # position of initial interface
-
-dl = 1.0              # density on left
-pl = 1.0              # pressure
-ul = 0.0              # X-velocity 
-vl = 0.0              # Y-velocity
-wl = 0.0              # Z-velocity
-
-dr = 0.125            # density on right
-pr = 0.1              # pressure
-ur = 0.0              # X-velocity
-vr = 0.0              # Y-velocity
-wr = 0.0              # Z-velocity
+pgen_name = H2_evolution # problem generator name
+n_H       = 100          # initial density, in units of number density of hydrogen atoms
+vx_kms    = 1.           # initial x-velocity, in km/s
+profile   = flat         # the profile of the H abundance, flat/gaussian
 
 <output1>
 file_type   = tab       # Tabular data dump
