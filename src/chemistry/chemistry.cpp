@@ -85,7 +85,7 @@ TaskStatus Chemistry::UpdateChemistry(Driver* d, int stage) {
       DevExeSpace(), start_limit, end_limit);
 
   Kokkos::parallel_for(
-      "write_to_chem_scalars", policy,
+      "Chemistry_ODE_Solve", policy,
       KOKKOS_LAMBDA(const int& mb_idx, const int& k, const int& j,
                     const int& i) {
         // Create the chemisty object
