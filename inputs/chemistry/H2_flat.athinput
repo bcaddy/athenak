@@ -1,7 +1,7 @@
 # AthenaXXX input file for Sod's hydrodynamic shocktube
 
 <comment>
-problem   = H-H2 chemistry with analytic solution
+problem   = H-H2 chemistry with analytic solution. Flat profile in H abundance
 reference = Section 4.1 in Gong et al. 2023, arXiv:2305.04965
 
 <job>
