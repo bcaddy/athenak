@@ -41,11 +41,12 @@ tlim       = 50        # time limit, 50Myr
 ndiag      = 1         # cycles between diagostic output
 
 <hydro>
-eos         = ideal    # EOS type
-reconstruct = plm      # spatial reconstruction method
-rsolver     = llf      # Riemann-solver to be used
-gamma       = 1.4      # gamma = C_p/C_v
-nscalars    = 0        # number of passive scalars in hydro
+eos             = ideal   # EOS type
+reconstruct     = plm     # spatial reconstruction method
+rsolver         = llf     # Riemann-solver to be used
+gamma           = 1.4     # gamma = C_p/C_v
+nscalars        = 0       # number of passive scalars in hydro
+iso_sound_speed = 1.0     # isothermal sound speed
 
 <units> 
 # ISM units
@@ -59,10 +60,11 @@ network    = H2            # Chemistry network to be used
 ode_solver = forward_euler # ODE solver to be used
 
 <problem>
-pgen_name = H2_evolution # problem generator name
+pgen_name = H2_uniform   # problem generator name
 n_H       = 100          # initial density, in units of number density of hydrogen atoms
 vx_kms    = 1.           # initial x-velocity, in km/s
-profile   = flat         # the profile of the H abundance, flat/gaussian
+r_init_H  = 1.0          # initial abundance
+r_init_H2 = 0.0
 
 <output1>
 file_type   = tab       # Tabular data dump
