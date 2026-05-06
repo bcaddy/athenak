@@ -204,14 +204,13 @@ std::string Chemistry::GetSpeciesNames(int const& scalar_idx) {
   static std::map<int, std::string> species_names_map;
   if (species_names_map.size() == 0) {
     // std::vector of scalar names
-    std::vector<std::string> species_names = {
-        "chem_species_1", "chem_species_2", "chem_species_3"};
+    auto species_names = H2Network::species_names;
 
     // Create the mapping
     int name_idx = 0;
     for (size_t i = get_chemistry_scalars_first_idx();
          i < get_chemistry_scalars_last_idx() + 1; i++) {
-      species_names_map[i] = species_names[name_idx];
+      species_names_map[i] = "chem_" + std::string(species_names[name_idx]);
       name_idx++;
     }
   }

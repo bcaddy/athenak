@@ -26,9 +26,8 @@ struct H2Network {
   static constexpr int neqs = 3;
 
   // ----- Arrays to store ODE state -----
-  RegisterArray<Real, neqs> y; // The current state
-  RegisterArray<Real, neqs> f; // The results of evaluating the ODEs
-
+  RegisterArray<Real, neqs> y;  // The current state
+  RegisterArray<Real, neqs> f;  // The results of evaluating the ODEs
 
   // ----- Species indices within the ODE system ------
   enum {
@@ -36,6 +35,10 @@ struct H2Network {
     IH2 = 1,  // H_2
     IH = 2    // H
   };
+
+  // ----- Names, used for output, must be the same order as the enum -----
+  static constexpr std::array<std::string_view, neqs> species_names = {"H2",
+                                                                       "H"};
 
   // ----- cell values -----
   Real const n_H;  // The number density of hydrogen
