@@ -165,10 +165,10 @@ TaskStatus Chemistry::UpdateChemistry(Driver* d, int stage) {
 
   // Get the failure flag and check for failure
   bool forward_euler_failure_h;
-  Kokkos::deep_copy(forward_euler_failure_h, forward_euler_failure);
+  Kokkos::deep_copy(forward_euler_failure, forward_euler_failure_h);
   if (forward_euler_failure_h) {
     std::cerr << "The Forwared Euler ODE solver failed to converge within "
-              << max_iterations << "cycles." << std::endl;
+              << max_iterations << " cycles." << std::endl;
     return TaskStatus::fail;
   }
 
