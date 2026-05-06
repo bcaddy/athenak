@@ -58,7 +58,7 @@ struct H2Network {
     // ----- Internal energy equation -----
     static constexpr Real x_He = 0.1;
     static constexpr Real x_e = 0.0;
-    const Real x_H2 = y[IH2];
+    const Real x_H2 = y(IH2);
 
     static constexpr Real T_floor = 1.;  // temperature floor for cooling
     // energy per hydrogen atom
@@ -67,15 +67,15 @@ struct H2Network {
     if (T < T_floor) {
       f(IIE) = 0;
     } else {
-      const Real dEdt = -Thermo::alpha_GD_ * n_H * std::sqrt(T) * T;
+      const Real dEdt = -Thermo::alpha_GD_ * n_H * Kokkos::sqrt(T) * T;
       // convert to code units
       f(IIE) = (dEdt * n_H / units_energy_density_cgs);
     }
 
     // ----- Abundance equations -----
     // cr = cosmic ray, gr = dust grain
-    const Real rate_cr = k_cr * y[IH2];
-    const Real rate_gr = k_gr * n_H * y[IH];
+    const Real rate_cr = k_cr * y(IH2);
+    const Real rate_gr = k_gr * n_H * y(IH);
 
     // H_2 equation
     f(IH2) = rate_gr - rate_cr;

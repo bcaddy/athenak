@@ -38,7 +38,6 @@ void ProblemGenerator::H2Uniform(ParameterInput* pin, const bool restart) {
   int& ks = indcs.ks;
   int& ke = indcs.ke;
   MeshBlockPack* pmbp = pmy_mesh_->pmb_pack;
-  auto& size = pmbp->pmb->mb_size;
   auto& w0 = pmbp->phydro->w0;
 
   // Get the input parameters from the input file
