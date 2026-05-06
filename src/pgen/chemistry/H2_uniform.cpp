@@ -51,7 +51,7 @@ void ProblemGenerator::H2Uniform(ParameterInput* pin, const bool restart) {
   hydro.vz = 0.0;
   hydro.e = n_H * SQR(iso_cs) / (pmbp->phydro->peos->eos_data.gamma - 1.0);
   const Real r_init_H = pin->GetReal("problem", "r_init_H");
-  const Real r_init_H2 = pin->GetReal("problem", "r_init_H");
+  const Real r_init_H2 = pin->GetReal("problem", "r_init_H2");
 
   // Assign values
   const int chem_start =
