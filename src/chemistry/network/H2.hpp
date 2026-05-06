@@ -69,7 +69,7 @@ struct H2Network {
     } else {
       const Real dEdt = -Thermo::alpha_GD_ * n_H * std::sqrt(T) * T;
       // convert to code units
-      f(IIE) = (dEdt * n_H / units_energy_density_cgs) * units_time_cgs;
+      f(IIE) = (dEdt * n_H / units_energy_density_cgs);
     }
 
     // ----- Abundance equations -----
@@ -82,8 +82,9 @@ struct H2Network {
     // H equation
     f(IH) = 2 * (rate_cr - rate_gr);
 
-    // Convert abundances back to code units
-    for (size_t i = 1; i < neqs; i++) {
+
+    // ----- Convert all back to code units -----
+    for (size_t i = 0; i < neqs; i++) {
       f(i) *= units_time_cgs;
     }
   }

@@ -45,11 +45,12 @@ void ProblemGenerator::H2Uniform(ParameterInput* pin, const bool restart) {
   const Real n_H = pin->GetReal("problem", "n_H");
   const Real iso_cs = pin->GetReal("hydro", "iso_sound_speed");
   HydPrim1D hydro;
-  hydro.d = n_H;
+  hydro.d = n_H * pmbp->punit->hydrogen_mass_cgs * pmbp->punit->mu() /
+            pmbp->punit->density_cgs();
   hydro.vx = pin->GetReal("problem", "vx_kms");
   hydro.vy = 0.0;
   hydro.vz = 0.0;
-  hydro.e = n_H * SQR(iso_cs) / (pmbp->phydro->peos->eos_data.gamma - 1.0);
+  hydro.e = hydro.d * SQR(iso_cs) / (pmbp->phydro->peos->eos_data.gamma - 1.0);
   const Real r_init_H = pin->GetReal("problem", "r_init_H");
   const Real r_init_H2 = pin->GetReal("problem", "r_init_H2");
 
