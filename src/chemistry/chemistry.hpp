@@ -122,6 +122,8 @@ class Chemistry {
   // pointers, the contents can be changed but the pointer address can't
   MeshBlockPack* const pmy_pack;
 
+  ParameterInput* my_pin;
+
   // These indicate if hydro or MHD is in use
   bool const is_hydro_enabled;
   bool const is_mhd_enabled;

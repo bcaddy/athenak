@@ -17,13 +17,18 @@ struct H2Network {
   KOKKOS_FUNCTION H2Network(Real const density, Real const density_cgs,
                             Real const mu, Real const hydrogen_mass_cgs,
                             Real const units_time_cgs,
-                            Real const units_energy_density_cgs)
-      : n_H(density * density_cgs / (mu * hydrogen_mass_cgs)),
+                            Real const units_energy_density_cgs,
+                            bool const is_const_Cv)
+      : n_H(density),  // * density_cgs / (mu * hydrogen_mass_cgs)),
         units_time_cgs(units_time_cgs),
-        units_energy_density_cgs(units_energy_density_cgs) {}
+        units_energy_density_cgs(units_energy_density_cgs),
+        const_cv(is_const_Cv) {}
 
   // ----- Number of equations -----
   static constexpr int neqs = 3;
+
+  // ----- If Cv is const or not -----
+  const bool const_cv;
 
   // ----- Arrays to store ODE state -----
   RegisterArray<Real, neqs> y;  // The current state
@@ -58,7 +63,7 @@ struct H2Network {
     // ----- Internal energy equation -----
     static constexpr Real x_He = 0.1;
     static constexpr Real x_e = 0.0;
-    const Real x_H2 = y(IH2);
+    const Real x_H2 = (const_cv) ? 0.0 : y(IH2);
 
     static constexpr Real T_floor = 1.;  // temperature floor for cooling
     // energy per hydrogen atom
@@ -81,7 +86,6 @@ struct H2Network {
     f(IH2) = rate_gr - rate_cr;
     // H equation
     f(IH) = 2 * (rate_cr - rate_gr);
-
 
     // ----- Convert all back to code units -----
     for (size_t i = 0; i < neqs; i++) {

@@ -30,7 +30,8 @@ Chemistry::Chemistry(MeshBlockPack* ppack, ParameterInput* pin)
       is_hydro_enabled(pin->DoesBlockExist("hydro")),
       is_mhd_enabled(pin->DoesBlockExist("mhd")),
       nscalars_chemistry(SetupGetNumChemistryScalars(ppack, pin, -1, false)),
-      chemistry_scalars_first_idx(ComputeChemistryScalarsStartIndex()) {
+      chemistry_scalars_first_idx(ComputeChemistryScalarsStartIndex()),
+      my_pin(pin) {
   // print a message telling users that this module isn't ready yet
   std::string const red = "\033[31m";
   std::string const reset = "\033[0m";
@@ -77,6 +78,10 @@ TaskStatus Chemistry::UpdateChemistry(Driver* d, int stage) {
   Real const mu = pmy_pack->punit->mu();  // mean molecular weight
   Real const hydrogen_mass_cgs = pmy_pack->punit->hydrogen_mass_cgs;
 
+  // ----- Stuff for the H2 network ------
+  bool const const_cv =
+      my_pin->GetOrAddBoolean("problem", "constant_cv", false);
+
   // ----- Get all the loop limits and generate the parallel policy ------
   // NOLINTNEXTLINE(whitespace/braces)
   auto const [start_limit, end_limit] = LoopLimitsAllCells();
@@ -90,7 +95,8 @@ TaskStatus Chemistry::UpdateChemistry(Driver* d, int stage) {
                     const int& i) {
         // Create the chemisty object
         H2Network chem_net(w0(mb_idx, IDN, k, j, i), density_cgs, mu,
-                           hydrogen_mass_cgs, time_cgs, energy_density_cgs);
+                           hydrogen_mass_cgs, time_cgs, energy_density_cgs,
+                           const_cv);
 
         // ------ Load cell values ------
         // Internal energy
