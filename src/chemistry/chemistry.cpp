@@ -266,16 +266,16 @@ int Chemistry::ComputeChemistryScalarsStartIndex() {
 std::tuple<Kokkos::Array<int, 4>, Kokkos::Array<int, 4>>
 Chemistry::LoopLimitsAllCells() {
   Kokkos::Array<int, 4> const start = {
-      0,                                 // meshblock start
-      pmy_pack->pmesh->mb_indcs.ks - 2,  // k start
-      pmy_pack->pmesh->mb_indcs.js - 2,  // j start
-      pmy_pack->pmesh->mb_indcs.is - 2   // i start
+      0,  // meshblock start
+      pmy_pack->pmesh->mb_indcs.ks - pmy_pack->pmesh->mb_indcs.ng,  // k start
+      pmy_pack->pmesh->mb_indcs.js - pmy_pack->pmesh->mb_indcs.ng,  // j start
+      pmy_pack->pmesh->mb_indcs.is - pmy_pack->pmesh->mb_indcs.ng   // i start
   };
   Kokkos::Array<int, 4> const end = {
-      pmy_pack->nmb_thispack,                // meshblock end
-      pmy_pack->pmesh->mb_indcs.ke + 1 + 2,  // k end
-      pmy_pack->pmesh->mb_indcs.je + 1 + 2,  // j end
-      pmy_pack->pmesh->mb_indcs.ie + 1 + 2   // i end
+      pmy_pack->nmb_thispack,  // meshblock end
+      pmy_pack->pmesh->mb_indcs.ke + 1 + pmy_pack->pmesh->mb_indcs.ng,  // k end
+      pmy_pack->pmesh->mb_indcs.je + 1 + pmy_pack->pmesh->mb_indcs.ng,  // j end
+      pmy_pack->pmesh->mb_indcs.ie + 1 + pmy_pack->pmesh->mb_indcs.ng   // i end
   };
   return {start, end};
 }
