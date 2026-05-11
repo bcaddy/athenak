@@ -19,7 +19,7 @@ struct H2Network {
                             Real const units_time_cgs,
                             Real const units_energy_density_cgs,
                             bool const is_const_Cv)
-      : n_H(density),  // * density_cgs / (mu * hydrogen_mass_cgs)),
+      : n_H(density * density_cgs / (mu * hydrogen_mass_cgs)),
         units_time_cgs(units_time_cgs),
         units_energy_density_cgs(units_energy_density_cgs),
         const_cv(is_const_Cv) {}
