@@ -39,13 +39,14 @@ void ProblemGenerator::H2Uniform(ParameterInput* pin, const bool restart) {
   int& ke = indcs.ke;
   MeshBlockPack* pmbp = pmy_mesh_->pmb_pack;
   auto& w0 = pmbp->phydro->w0;
+  auto& u0 = pmbp->phydro->u0;
 
   // Get the input parameters from the input file
   const Real n_H = pin->GetReal("problem", "n_H");
   const Real iso_cs = pin->GetReal("hydro", "iso_sound_speed");
   HydPrim1D hydro;
-  hydro.d = n_H * pmbp->punit->hydrogen_mass_cgs * pmbp->punit->mu() /
-            pmbp->punit->density_cgs();
+  hydro.d = n_H;  // * pmbp->punit->hydrogen_mass_cgs * pmbp->punit->mu() /
+                  // pmbp->punit->density_cgs();
   hydro.vx = pin->GetReal("problem", "vx_kms");
   hydro.vy = 0.0;
   hydro.vz = 0.0;
@@ -53,29 +54,46 @@ void ProblemGenerator::H2Uniform(ParameterInput* pin, const bool restart) {
   const Real r_init_H = pin->GetReal("problem", "r_init_H");
   const Real r_init_H2 = pin->GetReal("problem", "r_init_H2");
 
+  HydCons1D hydro_cons;
+  hydro_cons.d = n_H;
+  hydro_cons.mx = n_H * hydro.vx;
+  hydro_cons.my = 0.0;
+  hydro_cons.mz = 0.0;
+  hydro_cons.e = hydro.e + 0.5 * n_H * SQR(hydro.vx);
+
   // Assign values
   const int chem_start =
       pmbp->pchemistry->get_chemistry_scalars_first_idx() - 1;
   par_for(
       "pgen_H2_hydro", DevExeSpace(), 0, (pmbp->nmb_thispack - 1), ks, ke, js,
       je, is, ie, KOKKOS_LAMBDA(int m, int k, int j, int i) {
+        // // Assign hydro values to this cell
+        // w0(m, IDN, k, j, i) = hydro.d;
+        // w0(m, IVX, k, j, i) = hydro.vx;
+        // w0(m, IVY, k, j, i) = hydro.vy;
+        // w0(m, IVZ, k, j, i) = hydro.vz;
+        // w0(m, IEN, k, j, i) = hydro.e;
+
+        // // Assign chemistry values to this cell
+        // w0(m, chem_start + chemistry::H2Network::IH2, k, j, i) = r_init_H2;
+        // w0(m, chem_start + chemistry::H2Network::IH, k, j, i) = r_init_H;
+
         // Assign hydro values to this cell
-        w0(m, IDN, k, j, i) = hydro.d;
-        w0(m, IVX, k, j, i) = hydro.vx;
-        w0(m, IVY, k, j, i) = hydro.vy;
-        w0(m, IVZ, k, j, i) = hydro.vz;
-        w0(m, IEN, k, j, i) = hydro.e;
+        u0(m, IDN, k, j, i) = hydro_cons.d;
+        u0(m, IVX, k, j, i) = hydro_cons.mx;
+        u0(m, IVY, k, j, i) = hydro_cons.my;
+        u0(m, IVZ, k, j, i) = hydro_cons.mz;
+        u0(m, IEN, k, j, i) = hydro_cons.e;
 
         // Assign chemistry values to this cell
-        w0(m, chem_start + chemistry::H2Network::IH2, k, j, i) = r_init_H2;
-        w0(m, chem_start + chemistry::H2Network::IH, k, j, i) = r_init_H;
+        u0(m, chem_start + chemistry::H2Network::IH2, k, j, i) =
+            r_init_H2 * n_H;
+        u0(m, chem_start + chemistry::H2Network::IH, k, j, i) = r_init_H * n_H;
       });
 
   // Convert primitives to conserved
-  auto& u0 = pmbp->phydro->u0;
-  if (pmbp->padm == nullptr) {
-    pmbp->phydro->peos->PrimToCons(w0, u0, is, ie, js, je, ks, ke);
-  }
+  // pmbp->phydro->peos->PrimToCons(w0, u0, is, ie, js, je, ks, ke);
+  pmbp->phydro->peos->ConsToPrim(u0, w0, false, is, ie, js, je, ks, ke);
 
   return;
 }
