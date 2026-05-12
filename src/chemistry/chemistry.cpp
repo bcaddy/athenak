@@ -265,17 +265,21 @@ int Chemistry::ComputeChemistryScalarsStartIndex() {
 
 std::tuple<Kokkos::Array<int, 4>, Kokkos::Array<int, 4>>
 Chemistry::LoopLimitsAllCells() {
+  // This creates loop bounds over the entire grid, including the ghost cells.
+  // This requires extra computation but doesn't require that the ghost cells be
+  // re-communicated or that chemistry be inserted during the last stage of the
+  // integrator before boundary conditions are communicated
   Kokkos::Array<int, 4> const start = {
       0,  // meshblock start
-      pmy_pack->pmesh->mb_indcs.ks - pmy_pack->pmesh->mb_indcs.ng,  // k start
-      pmy_pack->pmesh->mb_indcs.js - pmy_pack->pmesh->mb_indcs.ng,  // j start
-      pmy_pack->pmesh->mb_indcs.is - pmy_pack->pmesh->mb_indcs.ng   // i start
+      0,  // k start
+      0,  // j start
+      0   // i start
   };
   Kokkos::Array<int, 4> const end = {
-      pmy_pack->nmb_thispack,  // meshblock end
-      pmy_pack->pmesh->mb_indcs.ke + 1 + pmy_pack->pmesh->mb_indcs.ng,  // k end
-      pmy_pack->pmesh->mb_indcs.je + 1 + pmy_pack->pmesh->mb_indcs.ng,  // j end
-      pmy_pack->pmesh->mb_indcs.ie + 1 + pmy_pack->pmesh->mb_indcs.ng   // i end
+      pmy_pack->nmb_thispack,            // meshblock end
+      pmy_pack->pmesh->mb_indcs.ke + 1,  // k end
+      pmy_pack->pmesh->mb_indcs.je + 1,  // j end
+      pmy_pack->pmesh->mb_indcs.ie + 1   // i end
   };
   return {start, end};
 }
