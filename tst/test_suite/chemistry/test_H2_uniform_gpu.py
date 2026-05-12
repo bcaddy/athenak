@@ -1,8 +1,5 @@
 """
-Sod shocktube test for non-relativistic hydro
-Runs tests for different
-  - reconstruction algorithms
-  - Riemann solvers
+Test for chemistry using the H2 network with uniform initial conditions. Runs tests for different ODE solvers
 """
 
 # Modules
