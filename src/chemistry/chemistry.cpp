@@ -275,11 +275,26 @@ Chemistry::LoopLimitsAllCells() {
       0,  // j start
       0   // i start
   };
+
+  // Check if the dimension is active and if it's not set the upper limit to 1
+  const int ke =
+      (pmy_pack->pmesh->mb_indcs.ke == 0)
+          ? 1
+          : pmy_pack->pmesh->mb_indcs.ke + 1 + pmy_pack->pmesh->mb_indcs.ng;
+  const int je =
+      (pmy_pack->pmesh->mb_indcs.je == 0)
+          ? 1
+          : pmy_pack->pmesh->mb_indcs.je + 1 + pmy_pack->pmesh->mb_indcs.ng;
+  const int ie =
+      (pmy_pack->pmesh->mb_indcs.ie == 0)
+          ? 1
+          : pmy_pack->pmesh->mb_indcs.ie + 1 + pmy_pack->pmesh->mb_indcs.ng;
+
   Kokkos::Array<int, 4> const end = {
-      pmy_pack->nmb_thispack,            // meshblock end
-      pmy_pack->pmesh->mb_indcs.ke + 1,  // k end
-      pmy_pack->pmesh->mb_indcs.je + 1,  // j end
-      pmy_pack->pmesh->mb_indcs.ie + 1   // i end
+      pmy_pack->nmb_thispack,  // meshblock end
+      ke,                      // k end
+      je,                      // j end
+      ie                       // i end
   };
   return {start, end};
 }
