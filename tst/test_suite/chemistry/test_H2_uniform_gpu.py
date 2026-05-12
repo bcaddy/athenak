@@ -1,5 +1,6 @@
 """
-Test for chemistry using the H2 network with uniform initial conditions. Runs tests for different ODE solvers
+Test for chemistry using the H2 network with uniform initial conditions. Runs tests for
+different ODE solvers
 """
 
 # Modules
@@ -90,7 +91,8 @@ def H2_uniform_l1_errors(time, fH2_test, fH_test, e_int_test):
 
 def run_h2_uniform(ode_solver):
     """Run the H2 uniform state test and compare to the analytic results.
-    Parameterized over the different ODE solvers. This function is called by both the CPU and GPU tests."""
+    Parameterized over the different ODE solvers. This function is called by both the CPU
+    and GPU tests."""
     try:
         results = testutils.run(input_file, [f"chemistry/{ode_solver}"])
         assert results, f"H2 uniform test run failed for {ode_solver} solver."
@@ -113,14 +115,23 @@ def run_h2_uniform(ode_solver):
             active_fields = ["eint", "s_00_chem_H2", "s_01_chem_H"]
             for field in active_fields:
                 for val in data[field]:
-                    assert val == data[field][0], f"{field} is not constant across the domain."
+                    assert val == data[field][0], (
+                        f"{field} is not constant across the domain."
+                    )
 
             # Verify that the inactive fields are unchanged
             inactive_fields = ["dens", "velx", "vely", "velz"]
-            fiducial_values = {"dens":1.11083e+02, "velx":0.0, "vely":0.0, "velz":0.0}
+            fiducial_values = {
+                "dens": 1.11083e02,
+                "velx": 0.0,
+                "vely": 0.0,
+                "velz": 0.0,
+            }
             for field in inactive_fields:
                 for val in data[field]:
-                    assert val == fiducial_values[field], f"{field} has incorrect value of {val}."
+                    assert val == fiducial_values[field], (
+                        f"{field} has incorrect value of {val}."
+                    )
 
         # Compute the L1 errors with the analytical solution
         l1_fH2, l1_fH, l1_e_int = H2_uniform_l1_errors(
@@ -135,18 +146,22 @@ def run_h2_uniform(ode_solver):
             "found {test_n_steps}."
         )
 
-        # Check the L1 errors of active fields, all thresholds are the measured error times a safety factor to reduce test brittleness
+        # Check the L1 errors of active fields, all thresholds are the measured error
+        # times a safety factor to reduce test brittleness
         l1_fH2_fiducial = 1.1 * 0.001144128932064307
         l1_fH_fiducial = 1.1 * 0.002288236484818268
         l1_e_int_fiducial = 1.1 * 1.65265104635921e-17
         assert l1_fH2 < l1_fH2_fiducial, (
-            f"The L1 error for the XYZ of {l1_fH2} is greater than the allowed value of {l1_fH2_fiducial}."
+            f"The L1 error for the XYZ of {l1_fH2} is greater than the allowed value"
+            " of {l1_fH2_fiducial}."
         )
         assert l1_fH < l1_fH_fiducial, (
-            f"The L1 error for the XYZ of {l1_fH} is greater than the allowed value of {l1_fH_fiducial}."
+            f"The L1 error for the XYZ of {l1_fH} is greater than the allowed value"
+            " of {l1_fH_fiducial}."
         )
         assert l1_e_int < l1_e_int_fiducial, (
-            f"The L1 error for the XYZ of {l1_e_int} is greater than the allowed value of {l1_e_int_fiducial}."
+            f"The L1 error for the XYZ of {l1_e_int} is greater than the allowed value"
+            " of {l1_e_int_fiducial}."
         )
 
     finally:
