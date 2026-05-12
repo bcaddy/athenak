@@ -39,7 +39,6 @@ void ProblemGenerator::H2Uniform(ParameterInput* pin, const bool restart) {
   int& ke = indcs.ke;
   MeshBlockPack* pmbp = pmy_mesh_->pmb_pack;
   auto& w0 = pmbp->phydro->w0;
-  auto& u0 = pmbp->phydro->u0;
 
   // Get the input parameters from the input file
   const Real n_H = pin->GetReal("problem", "n_H");
@@ -51,8 +50,8 @@ void ProblemGenerator::H2Uniform(ParameterInput* pin, const bool restart) {
   hydro.vy = 0.0;
   hydro.vz = 0.0;
   hydro.e = hydro.d * SQR(iso_cs) / (pmbp->phydro->peos->eos_data.gamma - 1.0);
-  const Real r_init_H = pin->GetReal("problem", "r_init_H");
-  const Real r_init_H2 = pin->GetReal("problem", "r_init_H2");
+  const Real init_H = pin->GetReal("problem", "init_H");
+  const Real init_H2 = pin->GetReal("problem", "init_H2");
 
   // Assign values
   const int chem_start =
@@ -68,8 +67,8 @@ void ProblemGenerator::H2Uniform(ParameterInput* pin, const bool restart) {
         w0(m, IEN, k, j, i) = hydro.e;
 
         // Assign chemistry values to this cell
-        w0(m, chem_start + chemistry::H2Network::IH2, k, j, i) = r_init_H2;
-        w0(m, chem_start + chemistry::H2Network::IH, k, j, i) = r_init_H;
+        w0(m, chem_start + chemistry::H2Network::IH2, k, j, i) = init_H2;
+        w0(m, chem_start + chemistry::H2Network::IH, k, j, i) = init_H;
       });
 
   // Convert primitives to conserved

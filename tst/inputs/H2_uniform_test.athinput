@@ -62,8 +62,8 @@ network    = H2            # Chemistry network to be used
 pgen_name   = H2_uniform   # problem generator name
 n_H         = 100          # initial density, in units of number density of hydrogen atoms
 vx_kms      = 0.0          # initial x-velocity, in km/s
-r_init_H    = 1.0          # initial abundance
-r_init_H2   = 0.0
+init_H    = 1.0          # initial abundance
+init_H2   = 0.0
 constant_cv = true
 
 <output1>
