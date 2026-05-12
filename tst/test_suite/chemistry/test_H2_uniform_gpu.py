@@ -15,7 +15,7 @@ import numpy as np
 # _recon = ["plm", "ppm4", "ppmx", "wenoz"]  # do not change order
 # _flux = ["llf", "hlle", "hllc", "roe"]
 # _res = [128, 256]  # resolutions to test
-_ode_solvers = ["forward_euler"]
+ode_solvers = ["forward_euler"]
 input_file = "inputs/H2_uniform_test.athinput"
 
 
@@ -74,7 +74,7 @@ def H2_uniform_analytical_solution(
     return unit_energy_in_erg, n_H, fH, fH2, Tg, eg
 
 
-def H2_uniform_l2_error(time, fH2_test, fH_test, e_int_test):
+def H2_uniform_l1_errors(time, fH2_test, fH_test, e_int_test):
     # First compute the analytical answers
     unit_energy_in_erg, n_H, fH_fiducial, fH2_fiducial, Tg_fiducial, e_int_fiducial = (
         H2_uniform_analytical_solution(time)
@@ -88,14 +88,12 @@ def H2_uniform_l2_error(time, fH2_test, fH_test, e_int_test):
     l1_fH = np.sum(np.abs(fH_fiducial - fH_test)) / fH_fiducial.size
     l1_e_int = np.sum(np.abs(e_int_fiducial - e_int_test)) / e_int_fiducial.size
 
-    # Compute the L2 norm
-    return np.sqrt(np.sum(np.array([l1_fH2, l1_fH, l1_e_int]) ** 2))
+    return l1_fH2, l1_fH, l1_e_int
 
 
-@pytest.mark.parametrize("ode_solver", _ode_solvers)
-def test_run(ode_solver):
+def run_h2_uniform(ode_solver):
     """Run the H2 uniform state test and compare to the analytic results.
-    Parameterized over the different ODE solvers."""
+    Parameterized over the different ODE solvers. This function is called by both the CPU and GPU tests."""
     try:
         results = testutils.run(input_file, [f"chemistry/{ode_solver}"])
         assert results, f"H2 uniform test run failed for {ode_solver} solver."
@@ -114,25 +112,52 @@ def test_run(ode_solver):
             H_abundance[i] = data["s_01_chem_H"][0]
             e_int[i] = data["eint"][0]
 
-        # Compute the L2 error with the analytical solution
-        l2_error = H2_uniform_l2_error(time, H2_abundance, H_abundance, e_int)
+            # Verify that all the active fields are constant across the domain
+            active_fields = ["eint", "s_00_chem_H2", "s_01_chem_H"]
+            for field in active_fields:
+                for val in data[field]:
+                    assert val == data[field][0], f"{field} is not constant across the domain."
 
-        # Assert the correct number of time steps
+            # Verify that the inactive fields are unchanged
+            inactive_fields = ["dens", "velx", "vely", "velz"]
+            fiducial_values = {"dens":1.11083e+02, "velx":0.0, "vely":0.0, "velz":0.0}
+            for field in inactive_fields:
+                for val in data[field]:
+                    assert val == fiducial_values[field], f"{field} has incorrect value of {val}."
+
+        # Compute the L1 errors with the analytical solution
+        l1_fH2, l1_fH, l1_e_int = H2_uniform_l1_errors(
+            time, H2_abundance, H_abundance, e_int
+        )
+
+        # Check the correct number of time steps
         fiducial_n_steps = 145
         test_n_steps = len(files)
         assert test_n_steps == fiducial_n_steps, (
             f"The number of time steps is not correct. Expected {fiducial_n_steps} but "
             "found {test_n_steps}."
         )
-        # If the error is larger than the threshold then fail
-        threshold = (
-            0.002558330944901397 * 1.1
-        )  # this is the measured error times a safety factor to reduce test brittleness
-        if l2_error > threshold:
-            pytest.fail(
-                f"L2 error of {l2_error} exceeds threshold of {threshold} with "
-                "{ode_solver} ODE solver."
-            )
+
+        # Check the L1 errors of active fields, all thresholds are the measured error times a safety factor to reduce test brittleness
+        l1_fH2_fiducial = 1.1 * 0.001144128932064307
+        l1_fH_fiducial = 1.1 * 0.002288236484818268
+        l1_e_int_fiducial = 1.1 * 1.65265104635921e-17
+        assert l1_fH2 < l1_fH2_fiducial, (
+            f"The L1 error for the XYZ of {l1_fH2} is greater than the allowed value of {l1_fH2_fiducial}."
+        )
+        assert l1_fH < l1_fH_fiducial, (
+            f"The L1 error for the XYZ of {l1_fH} is greater than the allowed value of {l1_fH_fiducial}."
+        )
+        assert l1_e_int < l1_e_int_fiducial, (
+            f"The L1 error for the XYZ of {l1_e_int} is greater than the allowed value of {l1_e_int_fiducial}."
+        )
+
     finally:
         pass
         testutils.cleanup()
+
+
+@pytest.mark.parametrize("ode_solver", ode_solvers)
+def test_h2_uniform_gpu(ode_solver):
+    """GPU Test for H2 uniform test problem."""
+    run_h2_uniform(ode_solver)
