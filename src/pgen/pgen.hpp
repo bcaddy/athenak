@@ -73,7 +73,7 @@ class ProblemGenerator {
   void RadiationBeam(ParameterInput *pin, const bool restart);
   void Z4cBoostedPuncture(ParameterInput *pin, const bool restart);
   void Z4cLinearWave(ParameterInput *pin, const bool restart);
-  void H2_evolution(ParameterInput* pin, const bool restart);
+  void H2Gaussian(ParameterInput* pin, const bool restart);
   void H2Uniform(ParameterInput* pin, const bool restart);
 
   // Generic error output function (using difference u0-u1)
