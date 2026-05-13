@@ -4,8 +4,8 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file H2_advection.cpp
-//! \brief Problem generator for chemistry problem that advects a gaussian state using
-//! the H2 network that has an analytical solution
+//! \brief Problem generator for chemistry problem that advects a gaussian state
+//! using the H2 network that has an analytical solution
 
 #include <iostream>
 #include <sstream>
@@ -24,7 +24,8 @@
 
 //----------------------------------------------------------------------------------------
 //! \fn ProblemGenerator::H2_advection()
-//! \brief Problem Generator for the H2 test problem that advects a gaussian state
+//! \brief Problem Generator for the H2 test problem that advects a gaussian
+//! state
 
 void ProblemGenerator::H2Advection(ParameterInput* pin, const bool restart) {
   if (restart) return;
@@ -80,11 +81,12 @@ void ProblemGenerator::H2Advection(ParameterInput* pin, const bool restart) {
         // Compute the H and H2 abundances
         Real H2_abundance, H_abundance;
         if (x <= 1.0) {
-          H_abundance  = Kokkos::exp(-SQR(x - gaussian_mean) / (2. * SQR(gaussian_std))); // H
-          H2_abundance = 0.5 * (n_H - H_abundance); // H2
+          H_abundance =
+              Kokkos::exp(-SQR(x - gaussian_mean) / (2. * SQR(gaussian_std)));
+          H2_abundance = 0.5 * (1.0 - H_abundance);
         } else {
-          H_abundance  = init_H;               // H
-          H2_abundance = (1. - init_H) * 0.5;  // H2
+          H_abundance = init_H;
+          H2_abundance = (1. - init_H) * 0.5;
         }
 
         // Assign chemistry values to this cell

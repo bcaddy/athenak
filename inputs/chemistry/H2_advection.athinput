@@ -63,6 +63,7 @@ ode_solver = forward_euler # ODE solver to be used
 pgen_name   = H2_advection  # problem generator name
 n_H         = 100          # initial density, in units of number density of hydrogen atoms
 vx_kms      = 0.2          # initial x-velocity, in km/s
+constant_cv = true
 
 <output1>
 file_type   = tab       # Tabular data dump
@@ -70,3 +71,5 @@ variable    = hydro_w   # variables to be output
 data_format = %12.5e    # Optional data format string
 dt          = 1      # time increment between outputs
 #dcycle      = 1         # output interval in cycles
+slice_x2    = 0.0       # slice in x2
+slice_x3    = 0.0       # slice in x3
