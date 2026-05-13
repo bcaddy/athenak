@@ -3,8 +3,8 @@
 // Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
-//! \file H2_gaussian.cpp
-//! \brief Problem generator for chemistry problem with a gaussian state using
+//! \file H2_advection.cpp
+//! \brief Problem generator for chemistry problem that advects a gaussian state using
 //! the H2 network that has an analytical solution
 
 #include <iostream>
@@ -23,13 +23,11 @@
 #include "units/units.hpp"
 
 //----------------------------------------------------------------------------------------
-//! \fn ProblemGenerator::H2_gaussian()
-//! \brief Problem Generator for the H2 test problem with a gaussian state
+//! \fn ProblemGenerator::H2_advection()
+//! \brief Problem Generator for the H2 test problem that advects a gaussian state
 
-void ProblemGenerator::H2Gaussian(ParameterInput* pin, const bool restart) {
+void ProblemGenerator::H2Advection(ParameterInput* pin, const bool restart) {
   if (restart) return;
-
-  std::cout << "in gaussian generator" << std::endl;
 
   // capture variables for the kernel
   auto& indcs = pmy_mesh_->mb_indcs;

@@ -130,7 +130,7 @@ add_executable(
         pgen/tests/rad_linear_wave.cpp
         pgen/tests/z4c_boosted_puncture.cpp
         pgen/tests/z4c_linear_wave.cpp
-        pgen/chemistry/H2_gaussian.cpp
+        pgen/chemistry/H2_advection.cpp
         pgen/chemistry/H2_uniform.cpp
 
         radiation/radiation.cpp

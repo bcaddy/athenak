@@ -5,7 +5,7 @@ problem   = H-H2 chemistry with analytic solution. Gaussian profile
 reference = Section 4.1 in Gong et al. 2023, arXiv:2305.04965
 
 <job>
-basename  = H2_gaussian # problem ID: basename of output filenames
+basename  = H2_advection # problem ID: basename of output filenames
 
 <mesh>
 nghost    = 2         # Number of ghost cells
@@ -60,7 +60,7 @@ network    = H2            # Chemistry network to be used
 ode_solver = forward_euler # ODE solver to be used
 
 <problem>
-pgen_name   = H2_gaussian  # problem generator name
+pgen_name   = H2_advection  # problem generator name
 n_H         = 100          # initial density, in units of number density of hydrogen atoms
 vx_kms      = 0.2          # initial x-velocity, in km/s
 

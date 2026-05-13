@@ -929,8 +929,8 @@ void ProblemGenerator::CallProblemGenerator(ParameterInput *pin, bool is_restart
     Diffusion(pin, is_restart);
   } else if (pgen_fun_name.compare("H2_uniform") == 0) {
     H2Uniform(pin, is_restart);
-  } else if (pgen_fun_name.compare("H2_gaussian") == 0) {
-    H2Gaussian(pin, is_restart);
+  } else if (pgen_fun_name.compare("H2_advection") == 0) {
+    H2Advection(pin, is_restart);
   // else, name not set on command line or input file, print warning and quit
   } else {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
