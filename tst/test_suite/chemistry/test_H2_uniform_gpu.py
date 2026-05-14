@@ -10,9 +10,6 @@ import athena_read
 import pathlib
 import numpy as np
 
-# _recon = ["plm", "ppm4", "ppmx", "wenoz"]  # do not change order
-# _flux = ["llf", "hlle", "hllc", "roe"]
-# _res = [128, 256]  # resolutions to test
 ode_solvers = ["forward_euler"]
 input_file = "inputs/H2_uniform_test.athinput"
 
@@ -165,7 +162,6 @@ def run_h2_uniform(ode_solver):
         )
 
     finally:
-        pass
         testutils.cleanup()
 
 
