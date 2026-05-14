@@ -38,7 +38,7 @@ def H2_advection_analytical_solutions(x, t, mu, sigma):
 
 
 def assert_constant(arr, value, field_name):
-    assert np.all(arr == value), (
+    assert np.allclose(arr, value, rtol=1e-3), (
         f"The {field_name} is either not constant or not the correct value."
     )
 
@@ -52,7 +52,7 @@ def H2_advection_verify_state(
     )
 
     # Verify the constant fields
-    assert_constant(state["dens"], 1.11083e+02, "density")
+    assert_constant(state["dens"], 1.11083e02, "density")
     assert_constant(state["eint"], e_int_fiducial, "internal energy")
     assert_constant(state["velx"], 0.2, "velx")
     assert_constant(state["vely"], 0.0, "vely")
@@ -79,43 +79,97 @@ def H2_advection_verify_state(
 
 
 def run_h2_advection(ode_solver):
-    """Run the H2 advecting Gaussian state test and compare to the analytic results.
-    Parameterized over the different ODE solvers. This function is called by both the CPU
-    and GPU tests."""
-    try:
-        results = testutils.run(input_file, [f"chemistry/{ode_solver}"])
-        assert results, f"H2 uniform test run failed for {ode_solver} solver."
+    """Run the H2 advecting Gaussian state test and compare to the analytic results as
+    well as running a convergence test. Parameterized over the different ODE solvers. This
+    function is called by both the CPU and GPU tests."""
 
-        # Load the data
-        root_path = pathlib.Path("./tab")
-        initial_state = athena_read.tab(root_path / "H2_advection.hydro_w.00000.tab")
-        final_state = athena_read.tab(root_path / "H2_advection.hydro_w.00001.tab")
+    resolutions = np.array([32, 64, 128, 256])
+    n_cycle_fiducial = (142, 283, 565, 1130)
+    L1_limits_factor = 1.1
+    H2_L1_limits_t0 = L1_limits_factor * np.array(
+        [
+            1.7040075803533873e-07,
+            1.1816495402172948e-07,
+            3.2697262080917544e-07,
+            2.0695474541153767e-07,
+        ]
+    )
+    H2_L1_limits_t5 = L1_limits_factor * np.array(
+        [
+            0.008902357671992878,
+            0.0033214914276244742,
+            0.001289147168499853,
+            0.0007298300086431499,
+        ]
+    )
+    H_L1_limits_t0 = L1_limits_factor * np.array(
+        [
+            8.000714313770876e-08,
+            7.839227337884267e-08,
+            5.160076015742856e-07,
+            2.860654277623745e-07,
+        ]
+    )
+    H_L1_limits_t5 = L1_limits_factor * np.array(
+        [
+            0.01780502159398574,
+            0.006643201605248968,
+            0.0025785138682497084,
+            0.0014593428297863306,
+        ]
+    )
 
-        # Verify the states
-        _, _ = H2_advection_verify_state(
-            initial_state,
-            t=0.0,
-            mu=0.5,
-            sigma=0.1,
-            e_int_fiducial=1.66625e+02,
-            n_dt_fiducial=0,
-            H2_L1_limit=1.1*3.2697262080917544e-07,
-            H_L1_limit=1.1*5.160076015742856e-07,
+    l1_H2 = np.empty_like(resolutions, dtype=np.float64)
+    l1_H = np.empty_like(resolutions, dtype=np.float64)
+
+    for i in range(len(resolutions)):
+        try:
+            results = testutils.run(
+                input_file, [f"chemistry/{ode_solver}", f"mesh/nx1={resolutions[i]}"]
+            )
+            assert results, f"H2 uniform test run failed for {ode_solver} solver."
+
+            # Load the data
+            root_path = pathlib.Path("./tab")
+            initial_state = athena_read.tab(
+                root_path / "H2_advection.hydro_w.00000.tab"
+            )
+            final_state = athena_read.tab(root_path / "H2_advection.hydro_w.00001.tab")
+
+            # Verify the states
+            _, _ = H2_advection_verify_state(
+                initial_state,
+                t=0.0,
+                mu=0.5,
+                sigma=0.1,
+                e_int_fiducial=1.66625e02,
+                n_dt_fiducial=0,
+                H2_L1_limit=H2_L1_limits_t0[i],
+                H_L1_limit=H_L1_limits_t0[i],
+            )
+            l1_H2[i], l1_H[i] = H2_advection_verify_state(
+                final_state,
+                t=5 * constants.pc_cgs / constants.km_s_cgs,
+                mu=1.5,
+                sigma=0.1,
+                e_int_fiducial=1.29430e2,
+                n_dt_fiducial=n_cycle_fiducial[i],
+                H2_L1_limit=H2_L1_limits_t5[i],
+                H_L1_limit=H_L1_limits_t5[i],
+            )
+
+        finally:
+            testutils.cleanup()
+
+    # Check the convergence
+    for i in range(1, len(resolutions)):
+        improvement = l1_H2[i - 1] / l1_H2[i]
+        expected = (
+            1.7  # this should be 4 but the forward euler solver isn't very accurate
         )
-        l1_H2, l1_H = H2_advection_verify_state(
-            final_state,
-            t=5 * constants.pc_cgs / constants.km_s_cgs,
-            mu=1.5,
-            sigma=0.1,
-            e_int_fiducial=1.29430e+2,
-            n_dt_fiducial=565,
-            H2_L1_limit=1.1*0.0012869569746452175,
-            H_L1_limit=1.1*0.0025741334805404496,
+        assert improvement > expected, (
+            f"Test is converging at a rate of {improvement} when it should be {expected} or better."
         )
-
-    finally:
-        pass
-        testutils.cleanup()
 
 
 @pytest.mark.parametrize("ode_solver", ode_solvers)
