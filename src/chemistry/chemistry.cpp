@@ -20,6 +20,7 @@
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
 #include "mhd/mhd.hpp"
+#include "ode_solvers/ode_solvers.hpp"
 
 namespace chemistry {
 //----------------------------------------------------------------------------------------
@@ -58,18 +59,9 @@ TaskStatus Chemistry::UpdateChemistry(Driver* d, int stage) {
   // The timestep
   Real const dt = pmy_pack->pmesh->dt;
 
-  // ----- Variables for the Forward Euler Solver -----
-  // For reporting if the forward euler solver didn't converge within
-  // max_iterations
-  DvceArray0D<bool> forward_euler_failure("forward_euler_failure", false);
-  static constexpr Real small_ = 1024. * std::numeric_limits<float>::min();
-  // TODO(Bob Caddy) convert these into runtime arguments
-  // The floor for chemical abundances
-  Real const yfloor = 1.0e-3;
-  // The CFL number for the forward euler subcycling
-  Real const cfl_cool_subcycle = 0.1;
-  // The maximum number of forward euler iterations
-  Real const max_iterations = 1e5;
+  // ----- Variables for the ODE solver -----
+  // For reporting if the ODE solver doesn't converge
+  DvceArray0D<bool> chemisty_ode_failure("chemisty_ode_failure", false);
 
   // ----- Get the unit conversions we'll need -----
   Real const time_cgs = pmy_pack->punit->time_cgs();
@@ -112,50 +104,11 @@ TaskStatus Chemistry::UpdateChemistry(Driver* d, int stage) {
         }
 
         // ------ Solve the ODEs ------
-        int icount = 0;
-        Real t_now = t_start;
-        Real t_end = t_start + dt;
-        while (t_now < t_end) {
-          // Evaluate the ODEs
-          chem_net.evaluate_function();
+        ode_solvers::ForwardEuler ode_solver(chem_net, t_start, dt);
+        ode_solver.SolveODE();
 
-          // Compute the chemistry time scale
-          Real dt_subcycle;
-          {
-            // calculate chemistry timescale
-            dt_subcycle = Kokkos::reduction_identity<Real>::min();
-            for (int s_idx = 0; s_idx < H2Network::neqs; s_idx++) {
-              // put floor in species abundance
-              Real const yf = Kokkos::max(chem_net.y(s_idx), yfloor);
-
-              // Compute the value to reduce
-              dt_subcycle = Kokkos::min(
-                  dt_subcycle, Kokkos::abs(yf / (chem_net.f(s_idx) + small_)));
-            }
-            dt_subcycle = cfl_cool_subcycle * dt_subcycle;
-
-            // If t_now + dt_subcycle is greater than t_end then lower the
-            // timestep accordingly
-            dt_subcycle = Kokkos::min(dt_subcycle, t_end - t_now);
-          }
-
-          // Advance one subcycle
-          {
-            for (int s_idx = 0; s_idx < H2Network::neqs; s_idx++) {
-              chem_net.y(s_idx) += chem_net.f(s_idx) * dt_subcycle;
-            }
-          }
-
-          // Update timing
-          t_now += dt_subcycle;
-          icount++;
-
-          // check if convergence is established within max_iterations.  If not,
-          // trigger a failure
-          if (icount > max_iterations) {
-            forward_euler_failure() = true;
-          }
-        }
+        // check if the ODE solver failed
+        chemisty_ode_failure() = ode_solver.failed;
 
         // ------ Write cell values back out ------
         // Internal energy
@@ -171,10 +124,9 @@ TaskStatus Chemistry::UpdateChemistry(Driver* d, int stage) {
 
   // Get the failure flag and check for failure
   bool forward_euler_failure_h;
-  Kokkos::deep_copy(forward_euler_failure_h, forward_euler_failure);
+  Kokkos::deep_copy(forward_euler_failure_h, chemisty_ode_failure);
   if (forward_euler_failure_h) {
-    std::cerr << "The Forwared Euler ODE solver failed to converge within "
-              << max_iterations << " cycles." << std::endl;
+    std::cerr << "The ODE solver failed to converge." << std::endl;
     return TaskStatus::complete;
   }
 

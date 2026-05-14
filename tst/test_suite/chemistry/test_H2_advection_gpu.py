@@ -48,7 +48,8 @@ def H2_advection_verify_state(
 ):
     # Verify the correct number of time steps
     assert state["cycle"] == n_dt_fiducial, (
-        f"The number of time steps ({state['cycle']}) does not match the fiducial value of {n_dt_fiducial}."
+        f"The number of time steps ({state['cycle']}) does not match the "
+        "fiducial value of {n_dt_fiducial}."
     )
 
     # Verify the constant fields
@@ -168,7 +169,8 @@ def run_h2_advection(ode_solver):
             1.7  # this should be 4 but the forward euler solver isn't very accurate
         )
         assert improvement > expected, (
-            f"Test is converging at a rate of {improvement} when it should be {expected} or better."
+            f"Test is converging at a rate of {improvement} when it should be {expected} "
+            "or better."
         )
 
 

@@ -1,15 +1,15 @@
-#ifndef CHEMISTRY_NETWORK_CHEMISTRY_NETWORKS_HPP_
-#define CHEMISTRY_NETWORK_CHEMISTRY_NETWORKS_HPP_
+#ifndef ODE_SOLVERS_ODE_SOLVERS_HPP_
+#define ODE_SOLVERS_ODE_SOLVERS_HPP_
 //========================================================================================
 // AthenaXXX astrophysical plasma code
 // Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
-//! \file chemistry_networks.hpp
-//  \brief This file provides a single entry point for the chemistry networks.
+//! \file ode_solvers.hpp
+//  \brief This file provides a single entry point for the ODE solvers.
 //  It's really just a bunch of includes so that other files don't have to
-//  include a significant number of chemistry network files.
+//  include a significant number of ODE solver files.
 
-#include "chemistry/network/H2.hpp"
+#include "ode_solvers/forward_euler.hpp"
 
-#endif  // CHEMISTRY_NETWORK_CHEMISTRY_NETWORKS_HPP_
+#endif  // ODE_SOLVERS_ODE_SOLVERS_HPP_

@@ -13,7 +13,8 @@
 #include "utils/register_array.hpp"
 
 namespace chemistry {
-struct H2Network {
+class H2Network {
+ public:
   KOKKOS_FUNCTION H2Network(Real const density, Real const density_cgs,
                             Real const mu, Real const hydrogen_mass_cgs,
                             Real const units_time_cgs,
