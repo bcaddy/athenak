@@ -56,7 +56,10 @@ class Chemistry {
   /*!
    * \brief Updates the chemistry abundances and internal energy
    */
-  TaskStatus UpdateChemistry(Driver* d, int stage);
+  TaskStatus UpdateChemistryTask(Driver* d, int stage);
+
+  // template <typename ODE_Solver_t, typename Network_t>
+  void UpdateChemistry();
 
   /*!
    * \brief Updates the conserved grid with the updated values from the
@@ -138,9 +141,9 @@ class Chemistry {
   DvceArray5D<Real> GetU0();
   DvceArray5D<Real> GetW0();
 
-  // Get bounds for looping over the grid
   /*!
-   * \brief Get loop limits for looping over all the cells.
+   * \brief Get loop limits for looping over all the cells, this includes both
+   * real and ghost cells
    *
    * \return std::tuple<Kokkos::Array<int, 4>, Kokkos::Array<int, 4>> The
    * MDRangePolicy start and end

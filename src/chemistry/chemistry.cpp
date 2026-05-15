@@ -50,7 +50,8 @@ Chemistry::~Chemistry() {}
 // ================
 // Member Functions
 // ================
-TaskStatus Chemistry::UpdateChemistry(Driver* d, int stage) {
+// template <typename ODE_Solver_t, typename Network_t>
+void Chemistry::UpdateChemistry() {
   // ------ Collect variables that we'll need -----
   // The primitive grid
   auto w0 = GetW0();
@@ -127,8 +128,12 @@ TaskStatus Chemistry::UpdateChemistry(Driver* d, int stage) {
   Kokkos::deep_copy(forward_euler_failure_h, chemisty_ode_failure);
   if (forward_euler_failure_h) {
     std::cerr << "The ODE solver failed to converge." << std::endl;
-    return TaskStatus::complete;
   }
+}
+
+TaskStatus Chemistry::UpdateChemistryTask(Driver* d, int stage) {
+  // UpdateChemistry<ode_solvers::ForwardEuler, H2Network>();
+  UpdateChemistry();
 
   return TaskStatus::complete;
 }
