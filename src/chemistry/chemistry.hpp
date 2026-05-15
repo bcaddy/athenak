@@ -58,7 +58,7 @@ class Chemistry {
    */
   TaskStatus UpdateChemistryTask(Driver* d, int stage);
 
-  // template <typename ODE_Solver_t, typename Network_t>
+  template <typename ODE_Solver_t, typename Network_t>
   void UpdateChemistry();
 
   /*!

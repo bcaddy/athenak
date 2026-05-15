@@ -57,6 +57,7 @@ mu          = 1.4                     # mean molecular weight
 
 <chemistry>
 network    = H2            # Chemistry network to be used
+ode_solver = forward_euler # ODE solver to be used
 
 <problem>
 pgen_name   = H2_uniform   # problem generator name

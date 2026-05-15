@@ -50,7 +50,20 @@ Chemistry::~Chemistry() {}
 // ================
 // Member Functions
 // ================
-// template <typename ODE_Solver_t, typename Network_t>
+TaskStatus Chemistry::UpdateChemistryTask(Driver* d, int stage) {
+  const std::string network = my_pin->GetString("chemistry", "network");
+  const std::string ode_solver = my_pin->GetString("chemistry", "ode_solver");
+
+  if (network == "H2") {
+    if (ode_solver == "forward_euler") {
+      UpdateChemistry<ode_solvers::ForwardEuler<H2Network>, H2Network>();
+    }
+  }
+
+  return TaskStatus::complete;
+}
+
+template <typename ODE_Solver_t, typename Network_t>
 void Chemistry::UpdateChemistry() {
   // ------ Collect variables that we'll need -----
   // The primitive grid
@@ -87,25 +100,25 @@ void Chemistry::UpdateChemistry() {
       KOKKOS_LAMBDA(const int& mb_idx, const int& k, const int& j,
                     const int& i) {
         // Create the chemisty object
-        H2Network chem_net(w0(mb_idx, IDN, k, j, i), density_cgs, mu,
+        Network_t chem_net(w0(mb_idx, IDN, k, j, i), density_cgs, mu,
                            hydrogen_mass_cgs, time_cgs, energy_density_cgs,
                            const_cv);
 
         // ------ Load cell values ------
         // Internal energy
-        chem_net.y(H2Network::IIE) = w0(mb_idx, IEN, k, j, i);
+        chem_net.y(Network_t::IIE) = w0(mb_idx, IEN, k, j, i);
 
         // Chemistry scalars. The loop is based off of the chemical
         // network's number of equations since that's known at compile time,
         // enabling more loop optimizations
         int grid_idx = species_start_idx;
-        for (int s_idx = 1; s_idx < H2Network::neqs; s_idx++) {
+        for (int s_idx = 1; s_idx < Network_t::neqs; s_idx++) {
           chem_net.y(s_idx) = w0(mb_idx, grid_idx, k, j, i);
           grid_idx += 1;
         }
 
         // ------ Solve the ODEs ------
-        ode_solvers::ForwardEuler ode_solver(chem_net, t_start, dt);
+        ODE_Solver_t ode_solver(chem_net, t_start, dt);
         ode_solver.SolveODE();
 
         // check if the ODE solver failed
@@ -113,29 +126,22 @@ void Chemistry::UpdateChemistry() {
 
         // ------ Write cell values back out ------
         // Internal energy
-        w0(mb_idx, IEN, k, j, i) = chem_net.y(H2Network::IIE);
+        w0(mb_idx, IEN, k, j, i) = chem_net.y(Network_t::IIE);
 
         // Chemistry scalars
         grid_idx = species_start_idx;
-        for (int s_idx = 1; s_idx < H2Network::neqs; s_idx++) {
+        for (int s_idx = 1; s_idx < Network_t::neqs; s_idx++) {
           w0(mb_idx, grid_idx, k, j, i) = chem_net.y(s_idx);
           grid_idx += 1;
         }
       });
 
   // Get the failure flag and check for failure
-  bool forward_euler_failure_h;
-  Kokkos::deep_copy(forward_euler_failure_h, chemisty_ode_failure);
-  if (forward_euler_failure_h) {
+  bool chemisty_ode_failure_h;
+  Kokkos::deep_copy(chemisty_ode_failure_h, chemisty_ode_failure);
+  if (chemisty_ode_failure_h) {
     std::cerr << "The ODE solver failed to converge." << std::endl;
   }
-}
-
-TaskStatus Chemistry::UpdateChemistryTask(Driver* d, int stage) {
-  // UpdateChemistry<ode_solvers::ForwardEuler, H2Network>();
-  UpdateChemistry();
-
-  return TaskStatus::complete;
 }
 
 TaskStatus Chemistry::PrimToCons(Driver* pdrive, int stage) {
@@ -167,7 +173,12 @@ std::string Chemistry::GetSpeciesNames(int const& scalar_idx) {
   static std::map<int, std::string> species_names_map;
   if (species_names_map.size() == 0) {
     // std::vector of scalar names
-    auto species_names = H2Network::species_names;
+    const std::string network = my_pin->GetString("chemistry", "network");
+    std::vector<std::string_view> species_names;
+    if (network == "H2") {
+      species_names.assign(H2Network::species_names.begin(),
+                           H2Network::species_names.end());
+    }
 
     // Create the mapping
     int name_idx = 0;
