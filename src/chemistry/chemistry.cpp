@@ -55,16 +55,22 @@ TaskStatus Chemistry::UpdateChemistryTask(Driver* d, int stage) {
   const std::string ode_solver = my_pin->GetString("chemistry", "ode_solver");
 
   if (network == "H2") {
+    auto h2_settings = H2Network::GetSettings(my_pin);
     if (ode_solver == "forward_euler") {
-      UpdateChemistry<ode_solvers::ForwardEuler<H2Network>, H2Network>();
+      auto fe_settings =
+          ode_solvers::ForwardEuler<H2Network>::GetSettings(my_pin);
+      UpdateChemistry<ode_solvers::ForwardEuler<H2Network>, H2Network>(
+          fe_settings, h2_settings);
     }
   }
 
   return TaskStatus::complete;
 }
 
-template <typename ODE_Solver_t, typename Network_t>
-void Chemistry::UpdateChemistry() {
+template <typename ODE_Solver_t, typename Network_t, typename ODESettings,
+          typename NetworkSettings>
+void Chemistry::UpdateChemistry(ODESettings const& ode_settings,
+                                NetworkSettings const& network_settings) {
   // ------ Collect variables that we'll need -----
   // The primitive grid
   auto w0 = GetW0();
@@ -84,10 +90,6 @@ void Chemistry::UpdateChemistry() {
   Real const mu = pmy_pack->punit->mu();  // mean molecular weight
   Real const hydrogen_mass_cgs = pmy_pack->punit->hydrogen_mass_cgs;
 
-  // ----- Stuff for the H2 network ------
-  bool const const_cv =
-      my_pin->GetOrAddBoolean("problem", "constant_cv", false);
-
   // ----- Get all the loop limits and generate the parallel policy ------
   // NOLINTNEXTLINE(whitespace/braces)
   auto const [start_limit, end_limit] = LoopLimitsAllCells();
@@ -100,9 +102,9 @@ void Chemistry::UpdateChemistry() {
       KOKKOS_LAMBDA(const int& mb_idx, const int& k, const int& j,
                     const int& i) {
         // Create the chemisty object
-        Network_t chem_net(w0(mb_idx, IDN, k, j, i), density_cgs, mu,
-                           hydrogen_mass_cgs, time_cgs, energy_density_cgs,
-                           const_cv);
+        Network_t chem_net(network_settings, w0(mb_idx, IDN, k, j, i),
+                           density_cgs, mu, hydrogen_mass_cgs, time_cgs,
+                           energy_density_cgs);
 
         // ------ Load cell values ------
         // Internal energy
@@ -118,7 +120,7 @@ void Chemistry::UpdateChemistry() {
         }
 
         // ------ Solve the ODEs ------
-        ODE_Solver_t ode_solver(chem_net, t_start, dt);
+        ODE_Solver_t ode_solver(ode_settings, chem_net, t_start, dt);
         ode_solver.SolveODE();
 
         // check if the ODE solver failed

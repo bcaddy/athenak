@@ -13,17 +13,22 @@
 #include "utils/register_array.hpp"
 
 namespace chemistry {
+struct H2Settings {
+  /// If C_v should be held constant
+  bool const_cv;
+};
+
 class H2Network {
  public:
-  KOKKOS_FUNCTION H2Network(Real const density, Real const density_cgs,
-                            Real const mu, Real const hydrogen_mass_cgs,
+  KOKKOS_FUNCTION H2Network(H2Settings const settings, Real const density,
+                            Real const density_cgs, Real const mu,
+                            Real const hydrogen_mass_cgs,
                             Real const units_time_cgs,
-                            Real const units_energy_density_cgs,
-                            bool const is_const_Cv)
+                            Real const units_energy_density_cgs)
       : n_H(density * density_cgs / (mu * hydrogen_mass_cgs)),
         units_time_cgs(units_time_cgs),
         units_energy_density_cgs(units_energy_density_cgs),
-        const_cv(is_const_Cv) {}
+        const_cv(settings.const_cv) {}
 
   // ----- Number of equations -----
   static constexpr int neqs = 3;
@@ -60,6 +65,16 @@ class H2Network {
   static constexpr Real k_cr = 3.0 * xi_cr;
 
   // ----- Member Functions -----
+  /*!
+   * \brief Get the settings for the H2 network from the input file
+   *
+   * \param pin The ParameterInput object
+   * \return H2Settings The settings for the H2 network
+   */
+  static H2Settings GetSettings(ParameterInput* pin) {
+    return H2Settings{pin->GetOrAddBoolean("problem", "constant_cv", false)};
+  }
+
   KOKKOS_FUNCTION void evaluate_function() {
     // ----- Internal energy equation -----
     static constexpr Real x_He = 0.1;

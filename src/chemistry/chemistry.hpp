@@ -58,8 +58,10 @@ class Chemistry {
    */
   TaskStatus UpdateChemistryTask(Driver* d, int stage);
 
-  template <typename ODE_Solver_t, typename Network_t>
-  void UpdateChemistry();
+  template <typename ODE_Solver_t, typename Network_t, typename ODESettings,
+            typename NetworkSettings>
+  void UpdateChemistry(ODESettings const& ode_settings,
+                       NetworkSettings const& network_settings);
 
   /*!
    * \brief Updates the conserved grid with the updated values from the

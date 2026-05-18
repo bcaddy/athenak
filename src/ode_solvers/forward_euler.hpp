@@ -12,12 +12,25 @@
 #include "athena.hpp"
 
 namespace ode_solvers {
+
+struct FESettings {
+  /// The max number of subcycles the Forwared Euler solver should execute
+  unsigned int fe_n_subcycle_max;
+  /// CFL number for the subcycles
+  Real fe_cfl;
+};
+
 template <typename T>
 class ForwardEuler {
  public:
   // ----- Constructor & Destructor -----
-  KOKKOS_FUNCTION ForwardEuler(T& ode_system, Real const t_start, Real const dt)
-      : ode_system(ode_system), t_start(t_start), dt(dt) {}
+  KOKKOS_FUNCTION ForwardEuler(FESettings const settings, T& ode_system,
+                               Real const t_start, Real const dt)
+      : ode_system(ode_system),
+        fe_cfl(settings.fe_cfl),
+        fe_n_subcycle_max(settings.fe_n_subcycle_max),
+        t_start(t_start),
+        dt(dt) {}
   KOKKOS_FUNCTION ~ForwardEuler() = default;
 
   // ----- Variables -----
@@ -28,9 +41,9 @@ class ForwardEuler {
   const Real yfloor = 1.0e-3;
   /// The CFL number for the forward euler subcycling. Lowering this has no
   /// impact on the solution for the H2 network
-  static constexpr Real cfl_cool_subcycle = 0.1;
+  const Real fe_cfl;
   /// The maximum number of forward euler iterations
-  static constexpr Real max_iterations = 1e5;
+  unsigned int fe_n_subcycle_max ;
   /// The system of ODEs to solve
   T& ode_system;
   /// The starting time for this solve
@@ -40,10 +53,25 @@ class ForwardEuler {
   /// If the solver failed to converge within the allocated number of cycles
   bool failed = false;
 
+  /*!
+   * \brief Get the settings for the Forward Euler ODE solver from the input
+   * file
+   *
+   * \param pin The ParameterInput object
+   * \return FESettings The settings for the Forward Euler solver
+   */
+  static FESettings GetSettings(ParameterInput* pin) {
+    unsigned int fe_n_subcycle_max =
+        pin->GetOrAddInteger("chemistry", "fe_n_subcycle_max", 1e5);
+    Real fe_cfl = pin->GetOrAddReal("chemistry", "fe_cfl", 0.1);
+
+    return FESettings{fe_cfl};//{fe_n_subcycle_max, fe_cfl};
+  }
+
   KOKKOS_FUNCTION
   void SolveODE() {
     // ------ Solve the ODEs ------
-    int icount = 0;
+    unsigned int icount = 0;
     Real t_now = t_start;
     Real t_end = t_start + dt;
     while (t_now < t_end) {
@@ -64,7 +92,7 @@ class ForwardEuler {
           dt_subcycle = Kokkos::min(
               dt_subcycle, Kokkos::abs(yf / (ode_system.f(s_idx) + small)));
         }
-        dt_subcycle = cfl_cool_subcycle * dt_subcycle;
+        dt_subcycle = fe_cfl * dt_subcycle;
 
         // If t_now + dt_subcycle is greater than t_end then lower the
         // timestep accordingly
@@ -83,9 +111,9 @@ class ForwardEuler {
       t_now += dt_subcycle;
       icount++;
 
-      // check if convergence is established within max_iterations.  If not,
+      // check if convergence is established within fe_n_subcycle_max.  If not,
       // trigger a failure
-      if (icount > max_iterations) {
+      if (icount > fe_n_subcycle_max) {
         failed = true;
       }
     }
