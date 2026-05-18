@@ -79,7 +79,7 @@ def H2_advection_verify_state(
     return l1_H2, l1_H
 
 
-def run_h2_advection(ode_solver):
+def run_h2_advection(ode_solver, mpi=False):
     """Run the H2 advecting Gaussian state test and compare to the analytic results as
     well as running a convergence test. Parameterized over the different ODE solvers. This
     function is called by both the CPU and GPU tests."""
@@ -125,7 +125,12 @@ def run_h2_advection(ode_solver):
 
     for i in range(len(resolutions)):
         try:
-            results = testutils.run(
+            if mpi:
+                results = testutils.mpi_run(
+                    input_file, [f"chemistry/{ode_solver}", f"mesh/nx1={resolutions[i]}"], threads=8
+            )
+            else:
+                results = testutils.run(
                 input_file, [f"chemistry/{ode_solver}", f"mesh/nx1={resolutions[i]}"]
             )
             assert results, f"H2 uniform test run failed for {ode_solver} solver."

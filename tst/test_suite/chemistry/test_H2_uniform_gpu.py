@@ -86,12 +86,13 @@ def H2_uniform_l1_errors(time, fH2_test, fH_test, e_int_test):
     return l1_fH2, l1_fH, l1_e_int
 
 
-def run_h2_uniform(ode_solver):
+def run_h2_uniform(ode_solver, mpi=False):
     """Run the H2 uniform state test and compare to the analytic results.
     Parameterized over the different ODE solvers. This function is called by both the CPU
     and GPU tests."""
+    RUN = testutils.mpi_run if mpi else testutils.run
     try:
-        results = testutils.run(input_file, [f"chemistry/{ode_solver}"])
+        results = RUN(input_file, [f"chemistry/{ode_solver}"])
         assert results, f"H2 uniform test run failed for {ode_solver} solver."
 
         # Load the data
@@ -136,7 +137,7 @@ def run_h2_uniform(ode_solver):
         )
 
         # Check the correct number of time steps
-        fiducial_n_steps = 145
+        fiducial_n_steps = 429
         test_n_steps = len(files)
         assert test_n_steps == fiducial_n_steps, (
             f"The number of time steps is not correct. Expected {fiducial_n_steps} but "
