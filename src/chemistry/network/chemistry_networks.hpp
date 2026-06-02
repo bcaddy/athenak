@@ -11,5 +11,6 @@
 //  include a significant number of chemistry network files.
 
 #include "chemistry/network/H2.hpp"
+#include "chemistry/network/gow17.hpp"
 
 #endif  // CHEMISTRY_NETWORK_CHEMISTRY_NETWORKS_HPP_
