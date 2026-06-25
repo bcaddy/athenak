@@ -951,6 +951,10 @@ void ProblemGenerator::CallProblemGenerator(ParameterInput *pin, bool is_restart
     Z4cLinearWave(pin, is_restart);
   } else if (pgen_fun_name.compare("diffusion") == 0) {
     Diffusion(pin, is_restart);
+  } else if (pgen_fun_name.compare("H2_uniform") == 0) {
+    H2Uniform(pin, is_restart);
+  } else if (pgen_fun_name.compare("H2_advection") == 0) {
+    H2Advection(pin, is_restart);
   } else if (pgen_fun_name.compare("gravity") == 0) {
     SelfGravity(pin, is_restart);
   } else if (pgen_fun_name.compare("binary_gravity") == 0) {
