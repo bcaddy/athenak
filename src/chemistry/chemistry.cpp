@@ -69,6 +69,15 @@ TaskStatus Chemistry::UpdateChemistryTask(Driver* d, int stage) {
           fe_settings, h2_settings);
     }
   }
+  else if (network == "GOW17") {
+    auto gow17_settings = GOW17Network::GetSettings(my_pin);
+    if (ode_solver == "forward_euler") {
+      auto fe_settings = ode_solvers::ForwardEuler<GOW17Network>::GetSettings(
+          my_pin, "chemistry");
+      UpdateChemistry<ode_solvers::ForwardEuler<GOW17Network>, GOW17Network>(
+          fe_settings, gow17_settings);
+    }
+  }
 
   return TaskStatus::complete;
 }
