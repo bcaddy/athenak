@@ -33,7 +33,7 @@ namespace interpolation {
  * \param x The value to interpolate around
  * \return int The index of the xarr with the first instance where x > xarr[i]
  */
-KOKKOS_INLINE_FUNCTION int LinearInterpIndex(const int len, const Real xarr[],
+KOKKOS_INLINE_FUNCTION size_t LinearInterpIndex(size_t len, const Real xarr[],
                                              const Real x) {
   if (x < xarr[0]) {
     return 0;

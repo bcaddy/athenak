@@ -56,7 +56,7 @@ time_cgs    = 3.15576e+13             # time is 1 Myr
 mu          = 1.27                    # mean molecular weight
 
 <chemistry>
-network    = H2            # Chemistry network to be used
+network    = GOW17         # Chemistry network to be used
 ode_solver = forward_euler # ODE solver to be used
 h2_constant_cv = true
 
