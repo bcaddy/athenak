@@ -68,8 +68,7 @@ TaskStatus Chemistry::UpdateChemistryTask(Driver* d, int stage) {
       UpdateChemistry<ode_solvers::ForwardEuler<H2Network>, H2Network>(
           fe_settings, h2_settings);
     }
-  }
-  else if (network == "GOW17") {
+  } else if (network == "GOW17") {
     auto gow17_settings = GOW17Network::GetSettings(my_pin);
     if (ode_solver == "forward_euler") {
       auto fe_settings = ode_solvers::ForwardEuler<GOW17Network>::GetSettings(
@@ -221,6 +220,9 @@ std::string Chemistry::GetSpeciesNames(int const& scalar_idx) {
     if (network == "H2") {
       species_names.assign(H2Network::species_names.begin(),
                            H2Network::species_names.end());
+    } else if (network == "GOW17") {
+      species_names.assign(GOW17Network::species_names.begin(),
+                           GOW17Network::species_names.end());
     }
 
     // Create the mapping
