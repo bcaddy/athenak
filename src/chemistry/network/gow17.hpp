@@ -361,6 +361,26 @@ class GOW17Network {
   CDRates_t<neqs - 1> CDRates() {
     CDRates_t<neqs - 1> rates;
 
+    // cr = cosmic ray, gr = dust grain
+    const Real rate_cr = k_cr;
+    const Real rate_gr = k_gr * n_H;
+
+    // H_2 equation
+    rates.creation(IH2) = rate_gr * y(IH_plus);
+    // H equation
+    rates.creation(IH_plus) = 2 * rate_cr * y(IH2);
+
+    // H_2 equation
+    rates.destruction(IH2) = rate_cr;
+    // H equation
+    rates.destruction(IH_plus) = 2 * rate_gr;
+
+    // convert to code units
+    for (size_t i = 0; i < neqs - 1; i++) {
+      rates.creation(i) *= units_time_cgs;
+      rates.destruction(i) *= units_time_cgs;
+    }
+
     return rates;
   }
 
@@ -464,7 +484,7 @@ class GOW17Network {
   // (17) *H + *e -> H+ + 2 *e       --(11) Relates to Te
   // ----added for H3+ destruction in addition to (10)----
   // (18) H3+ + *e -> *3H            --(111)
-  // ----added He+ destruction in addition to (3), from UMIST12----
+  // ----added He+ destruction in addtion to (3), from UMIST12----
   // (19) He+ + H2 -> H2+ + *He
   // ----added CH reaction to match for abundances of CH---
   // (20) CH + *H -> H2 + *C
