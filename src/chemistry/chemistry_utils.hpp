@@ -33,8 +33,25 @@ namespace interpolation {
  * \param x The value to interpolate around
  * \return int The index of the xarr with the first instance where x > xarr[i]
  */
-KOKKOS_INLINE_FUNCTION size_t LinearInterpIndex(size_t len, const Real xarr[],
-                                             const Real x) {
+KOKKOS_INLINE_FUNCTION size_t LinearInterpIndex(const size_t len,
+                                                const Real xarr[],
+                                                const Real x) {
+  if (x < xarr[0]) {
+    return 0;
+  } else if (x > xarr[len - 1]) {
+    return len - 2;
+  } else {
+    int i = 0;
+    while (x > xarr[i]) {
+      i++;
+    }
+    return i - 1;
+  }
+}
+
+template <std::size_t N>
+KOKKOS_INLINE_FUNCTION size_t LinearInterpIndex(
+    const size_t len, const Kokkos::Array<Real, N> xarr, const Real x) {
   if (x < xarr[0]) {
     return 0;
   } else if (x > xarr[len - 1]) {
@@ -59,7 +76,9 @@ KOKKOS_INLINE_FUNCTION Real LinearInterp(const Real x0, const Real x1,
 /*!
  * \brief Interpolation with index provided.
  */
-KOKKOS_INLINE_FUNCTION Real LP1Di(const Real* xarr, const Real* data,
+template <std::size_t N_xarr, std::size_t N_data>
+KOKKOS_INLINE_FUNCTION Real LP1Di(const Kokkos::Array<Real, N_xarr> xarr,
+                                  const Kokkos::Array<Real, N_data> data,
                                   const int ix, const Real x) {
   return LinearInterp(xarr[ix], xarr[ix + 1], data[ix], data[ix + 1], x);
 }
@@ -68,10 +87,12 @@ KOKKOS_INLINE_FUNCTION Real LP1Di(const Real* xarr, const Real* data,
 /*!
  * \brief 2D array bi-linear interpolation with index provided
  */
-KOKKOS_INLINE_FUNCTION Real LP2Di(const Real* xarr, const Real* yarr,
+template <std::size_t N_xarr, std::size_t N_yarr, std::size_t N_data>
+KOKKOS_INLINE_FUNCTION Real LP2Di(const Kokkos::Array<Real, N_xarr> xarr,
+                                  const Kokkos::Array<Real, N_yarr> yarr,
                                   const int lenx, const int ix, const int iy,
-                                  const Real* data, const Real x,
-                                  const Real y) {
+                                  const Kokkos::Array<Real, N_data> data,
+                                  const Real x, const Real y) {
   Real fl1, fl2;
   const Real x0 = xarr[ix];
   const Real x1 = xarr[ix + 1];

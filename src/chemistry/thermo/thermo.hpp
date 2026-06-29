@@ -737,19 +737,19 @@ class Thermo {
   static constexpr size_t lenTCO_ = 11;
   static constexpr size_t lenNeffCO_ = 11;
   // gas temperature in K
-  static constexpr Real TCO_[lenTCO_] = {10,  20,  30,   50,   80,  100,
-                                         300, 600, 1000, 1500, 2000};
+  static constexpr Kokkos::Array<Real, lenTCO_> TCO_ = {
+      10, 20, 30, 50, 80, 100, 300, 600, 1000, 1500, 2000};
   // effective column density of CO in cm^-2
-  static constexpr Real NeffCO_[lenNeffCO_] = {
+  static constexpr Kokkos::Array<Real, lenNeffCO_> NeffCO_ = {
       14.0, 14.5, 15.0, 15.5, 16.0, 16.5, 17.0, 17.5, 18.0, 18.5, 19.0};
   // L0CO_, LLTECO_, nhalfCO_, alphaCO_ are fitting coefficients
   // in Omukai+2010 equation B1 and Table 2
-  static constexpr Real L0CO_[lenTCO_] = {
+  static constexpr Kokkos::Array<Real, lenTCO_> L0CO_ = {
       24.77, 24.38, 24.21, 24.03, 23.89, 23.82,
       // values from despotic, behaves better at high temperature
       23.34238089, 22.99832519, 22.75384686, 22.56640625, 22.43740866};
   //                                       23.42, 23.13, 22.91, 22.63, 22.28};
-  static constexpr Real LLTECO_[lenNeffCO_ * lenTCO_] = {
+  static constexpr Kokkos::Array<Real, lenNeffCO_ * lenTCO_> LLTECO_ = {
       21.08, 20.35, 19.94, 19.45, 19.01, 18.80, 17.81, 17.23, 16.86, 16.66,
       16.55, 21.09, 20.35, 19.95, 19.45, 19.01, 18.80, 17.81, 17.23, 16.86,
       16.66, 16.55, 21.11, 20.37, 19.96, 19.46, 19.01, 18.80, 17.81, 17.23,
@@ -763,7 +763,7 @@ class Thermo {
       22.23, 21.65, 20.94, 20.32, 20.03, 18.67, 17.89, 17.48, 17.26, 17.12,
       23.76, 22.66, 22.06, 21.35, 20.71, 20.42, 19.03, 18.26, 17.93, 17.74,
       17.61};
-  static constexpr Real nhalfCO_[lenNeffCO_ * lenTCO_] = {
+  static constexpr Kokkos::Array<Real, lenNeffCO_ * lenTCO_> nhalfCO_ = {
       3.29,   3.49,  3.67,  3.97, 4.30, 4.46, 5.17, 5.47, 5.53, 5.30, 4.70,
       3.27,   3.48,  3.66,  3.96, 4.30, 4.45, 5.16, 5.47, 5.53, 5.30, 4.70,
       3.22,   3.45,  3.64,  3.94, 4.29, 4.45, 5.16, 5.47, 5.53, 5.30, 4.70,
@@ -775,7 +775,7 @@ class Thermo {
       0.742,  1.15,  1.47,  1.95, 2.50, 2.75, 3.98, 4.57, 4.73, 4.52, 3.84,
       0.242,  0.652, 0.966, 1.45, 2.00, 2.25, 3.48, 4.07, 4.24, 4.03, 3.35,
       -0.258, 0.152, 0.466, 0.95, 1.50, 1.75, 2.98, 3.57, 3.74, 3.53, 2.85};
-  static constexpr Real alphaCO_[lenNeffCO_ * lenTCO_] = {
+  static constexpr Kokkos::Array<Real, lenNeffCO_ * lenTCO_> alphaCO_ = {
       0.439, 0.409, 0.392, 0.370, 0.361, 0.357, 0.385, 0.437, 0.428, 0.354,
       0.322, 0.436, 0.407, 0.391, 0.368, 0.359, 0.356, 0.385, 0.437, 0.427,
       0.354, 0.322, 0.428, 0.401, 0.385, 0.364, 0.356, 0.352, 0.383, 0.436,
@@ -793,14 +793,14 @@ class Thermo {
   // --- dust cooling tabulated from DESPOTIC, not used ---------------
   static constexpr size_t lenTg_ = 10;
   static constexpr size_t lennH_ = 15;
-  static constexpr Real logTg_[lenTg_] = {
+  static constexpr Kokkos::Array<Real, lenTg_> logTg_ = {
       0.5,        0.88888889, 1.27777778, 1.66666667, 2.05555556,
       2.44444444, 2.83333333, 3.22222222, 3.61111111, 4.};
-  static constexpr Real lognH_[lennH_] = {
+  static constexpr Kokkos::Array<Real, lennH_> lognH_ = {
       0.,         0.42857143, 0.85714286, 1.28571429, 1.71428571,
       2.14285714, 2.57142857, 3.,         3.42857143, 3.85714286,
       4.28571429, 4.71428571, 5.14285714, 5.57142857, 6.};
-  static constexpr Real logps_[lennH_ * lenTg_] = {
+  static constexpr Kokkos::Array<Real, lennH_ * lenTg_> logps_ = {
       33.60923439, 32.35048647, 31.6458604,  31.02132235, 30.42222289,
       29.83261,    29.24673384, 28.66235604, 28.0785789,  27.49504472,
       33.18091039, 31.92216147, 31.21753302, 30.59298934, 29.99387726,
@@ -834,7 +834,7 @@ class Thermo {
 
   //-----radiative cooling from Schure 2009, A&A 508, 751–757, not used -------
   static constexpr size_t len_rad_cool_ = 110;
-  static constexpr Real log_Trad_[len_rad_cool_] = {
+  static constexpr Kokkos::Array<Real, len_rad_cool_> log_Trad_ = {
       3.80, 3.84, 3.88, 3.92, 3.96, 4.00, 4.04, 4.08, 4.12, 4.16, 4.20,
       4.24, 4.28, 4.32, 4.36, 4.40, 4.44, 4.48, 4.52, 4.56, 4.60, 4.64,
       4.68, 4.72, 4.76, 4.80, 4.84, 4.88, 4.92, 4.96, 5.00, 5.04, 5.08,
@@ -845,7 +845,7 @@ class Thermo {
       6.88, 6.92, 6.96, 7.00, 7.04, 7.08, 7.12, 7.16, 7.20, 7.24, 7.28,
       7.32, 7.36, 7.40, 7.44, 7.48, 7.52, 7.56, 7.60, 7.64, 7.68, 7.72,
       7.76, 7.80, 7.84, 7.88, 7.92, 7.96, 8.00, 8.04, 8.08, 8.12, 8.16};
-  static constexpr Real log_gamma_H_He_[len_rad_cool_] = {
+  static constexpr Kokkos::Array<Real, len_rad_cool_> log_gamma_H_He_ = {
       -30.61, -29.41, -28.46, -27.57, -26.38, -25.29, -24.27, -23.38, -22.60,
       -21.97, -21.61, -21.49, -21.52, -21.61, -21.71, -21.82, -21.91, -22.00,
       -22.08, -22.17, -22.25, -22.32, -22.36, -22.34, -22.25, -22.10, -21.95,
@@ -859,7 +859,7 @@ class Thermo {
       -22.83, -22.81, -22.79, -22.77, -22.76, -22.74, -22.72, -22.71, -22.69,
       -22.67, -22.65, -22.63, -22.61, -22.59, -22.57, -22.55, -22.53, -22.51,
       -22.49, -22.47};
-  static constexpr Real log_gamma_Z_[len_rad_cool_] = {
+  static constexpr Kokkos::Array<Real, len_rad_cool_> log_gamma_Z_ = {
       -100.0, -100.0, -100.0, -100.0, -100.0, -100.0, -100.0, -100.0, -100.0,
       -100.0, -23.06, -22.73, -22.54, -22.44, -22.33, -22.17, -21.98, -21.77,
       -21.60, -21.45, -21.32, -21.20, -21.09, -21.00, -20.92, -20.85, -20.80,
@@ -876,10 +876,11 @@ class Thermo {
 
   // WD2001: Weingartner and Draine 2001, ApJ, 134:263-281
   // PE heating coefficients from WD2001 Table 2, second last line
-  static constexpr Real CPE_[7] = {5.22,  2.25,  0.04996, 0.00430,
-                                   0.147, 0.431, 0.692};
+  static constexpr Kokkos::Array<Real, 7> CPE_ = {
+      5.22, 2.25, 0.04996, 0.00430, 0.147, 0.431, 0.692};
   // Collisional cooling included in PE heating, WD2001 Table3, second last line
-  static constexpr Real DPE_[5] = {0.4535, 2.234, -6.266, 1.442, 0.05089};
+  static constexpr Kokkos::Array<Real, 5> DPE_ = {0.4535, 2.234, -6.266, 1.442,
+                                                  0.05089};
 };
 }  // namespace chemistry
 
