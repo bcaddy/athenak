@@ -361,19 +361,67 @@ class GOW17Network {
   CDRates_t<neqs - 1> CDRates() {
     CDRates_t<neqs - 1> rates;
 
-    // cr = cosmic ray, gr = dust grain
-    const Real rate_cr = k_cr;
-    const Real rate_gr = k_gr * n_H;
+    // energy per hydrogen atom
+    const Real E_ergs = y(IIE) * units_energy_density_cgs / n_H;
 
-    // H_2 equation
-    rates.creation(IH2) = rate_gr * y(IH_plus);
-    // H equation
-    rates.creation(IH_plus) = 2 * rate_cr * y(IH2);
+    // Verify abundances are positive, finite, and not NaN valued
+    for (size_t i = 0; i < y.size; i++) {
+      // Verify positivity
+      y[i] = Kokkos::max(y[i], 0.0);
 
-    // H_2 equation
-    rates.destruction(IH2) = rate_cr;
-    // H equation
-    rates.destruction(IH_plus) = 2 * rate_gr;
+      // Check if finite or NaN valued and set to 0 if that's the case
+      y[i] = (Kokkos::isinf(y[i]) or Kokkos::isnan(y[i])) ? 0 : y[i];
+    }
+
+    UpdateRates_();
+
+    // // cosmic ray reactions
+    // for (int i = 0; i < n_cr_; i++) {
+    //   rate = kcr_[i] * yprev[incr_[i]];
+    //   ydotg[incr_[i]] -= rate;
+    //   ydotg[outcr_[i]] += rate;
+    // }
+
+    // // 2body reactions
+    // for (int i = 0; i < n_2body_; i++) {
+    //   rate = k2body_[i] * yprev[in2body1_[i]] * yprev[in2body2_[i]];
+    //   if (yprev[in2body1_[i]] < 0 && yprev[in2body2_[i]] < 0) {
+    //     rate *= -1.;
+    //   }
+    //   ydotg[in2body1_[i]] -= rate;
+    //   ydotg[in2body2_[i]] -= rate;
+    //   ydotg[out2body1_[i]] += rate;
+    //   ydotg[out2body2_[i]] += rate;
+    // }
+
+    // // photo reactions
+    // for (int i = 0; i < n_ph_; i++) {
+    //   rate = kph_[i] * yprev[inph_[i]];
+    //   ydotg[inph_[i]] -= rate;
+    //   ydotg[outph1_[i]] += rate;
+    // }
+
+    // // grain assisted reactions
+    // for (int i = 0; i < n_gr_; i++) {
+    //   rate = kgr_[i] * yprev[ingr_[i]];
+    //   ydotg[ingr_[i]] -= rate;
+    //   ydotg[outgr_[i]] += rate;
+    // }
+
+    // // set ydot to return
+    // for (int i = 0; i < NSPECIES; i++) {
+    //   // return in code units
+    //   ydot[i] = ydotg[i] * pmy_mb_->pmy_mesh->punit->code_time_cgs;
+    // }
+
+    // Verify abundances are positive, finite, and not NaN valued
+    for (size_t i = 0; i < f.size; i++) {
+      // Verify positivity
+      f[i] = Kokkos::max(f[i], 0.0);
+
+      // Check if finite or NaN valued and set to 0 if that's the case
+      f[i] = (Kokkos::isinf(f[i]) or Kokkos::isnan(f[i])) ? 0 : f[i];
+    }
 
     // convert to code units
     for (size_t i = 0; i < neqs - 1; i++) {
@@ -385,12 +433,23 @@ class GOW17Network {
   }
 
   /*!
+   * \brief Setup the network for the next iteration of the ODE solver
+   *
+   */
+  KOKKOS_FUNCTION
+  void SetupNextStep() {
+    // Set the ghost species
+    ComputeGhostSpecies_();
+  }
+
+  /*!
    * \brief Computes `f` using the values in `y`
    */
   KOKKOS_FUNCTION
   void evaluate_function() {
     // ----- Setup for the next step -----
-    ComputeGhostSpecies();
+    SetupNextStep();
+
     // Set negative values to zero
     for (int i = 0; i < y.size; i++) {
       if (y(i) < 0) {
@@ -550,15 +609,15 @@ class GOW17Network {
   Real gradv_;  // absolute value of velocity gradient in cgs, >0
 
   KOKKOS_FUNCTION
-  void ComputeGhostSpecies() {
+  void ComputeGhostSpecies_() {
     // set the ghost species
-    y[ISi_g] = xSi - y[ISi_plus];
-    y[IC_g] = xC - y[IHCO_plus] - y[ICHx] - y[ICO] - y[IC_plus];
-    y[IO_g] = xO - y[IHCO_plus] - y[IOHx] - y[ICO] - y[IO_plus];
-    y[IHe_g] = xHe - y[IHE_plus];
-    y[Ie_g] = y[IHE_plus] + y[IC_plus] + y[IHCO_plus] + y[IH3_plus] +
+    f[ISi_g] = xSi - y[ISi_plus];
+    f[IC_g] = xC - y[IHCO_plus] - y[ICHx] - y[ICO] - y[IC_plus];
+    f[IO_g] = xO - y[IHCO_plus] - y[IOHx] - y[ICO] - y[IO_plus];
+    f[IHe_g] = xHe - y[IHE_plus];
+    f[Ie_g] = y[IHE_plus] + y[IC_plus] + y[IHCO_plus] + y[IH3_plus] +
               y[IH2_plus] + y[IH_plus] + y[IO_plus] + y[ISi_plus];
-    y[IH_g] = 1.0 - (y[IOHx] + y[ICHx] + y[IHCO_plus] + 3.0 * y[IH3_plus] +
+    f[IH_g] = 1.0 - (y[IOHx] + y[ICHx] + y[IHCO_plus] + 3.0 * y[IH3_plus] +
                      2.0 * y[IH2_plus] + y[IH_plus] + 2.0 * y[IH2]);
   }
 };  // class GOW17Network
