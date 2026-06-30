@@ -670,12 +670,12 @@ class GOW17Network {
     const Real logT4coll = Kokkos::log10(T_collisional / 1.0e4);
     const Real lnTecoll = Kokkos::log(T_collisional * 8.6173e-5);
 
-    Real ncr, n2ncr;
-    Real psi;        // H+ grain recombination parameter
-    Real kcr_H_fac;  // ratio of total rate to primary rate
-    Real psi_gr_fac_;
-    const Real kida_fac = (0.62 + 45.41 / Kokkos::sqrt(T)) * n_H;
-    Real t1_CHx, t2_CHx;
+    // Real ncr, n2ncr;
+    // Real psi;        // H+ grain recombination parameter
+    // Real kcr_H_fac;  // ratio of total rate to primary rate
+    // Real psi_gr_fac_;
+    // const Real kida_fac = (0.62 + 45.41 / Kokkos::sqrt(T)) * n_H;
+    // Real t1_CHx, t2_CHx;
 
     // // cosmic ray reactions
     // for (int i = 0; i < n_cr_; i++) {
