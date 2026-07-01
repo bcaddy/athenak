@@ -383,8 +383,10 @@ class GOW17Network {
       // Verify positivity
       y[i] = Kokkos::fmax(y[i], 0.0);
 
-      // Check if finite or NaN valued and set to 0 if that's the case
-      y[i] = (Kokkos::isinf(y[i]) || Kokkos::isnan(y[i])) ? 0 : y[i];
+      // Check if inf or NaN valued and throw abort if that's the case
+      if (Kokkos::isinf(y[i]) || Kokkos::isnan(y[i])) {
+        Kokkos::abort("Error: NaN or Inf value found in GOW17 `y` array\n");
+      }
     }
 
     UpdateRates_();
@@ -433,8 +435,10 @@ class GOW17Network {
       // Verify positivity
       f[i] = Kokkos::fmax(f[i], 0.0);
 
-      // Check if finite or NaN valued and set to 0 if that's the case
-      f[i] = (Kokkos::isinf(f[i]) || Kokkos::isnan(f[i])) ? 0 : f[i];
+      // Check if inf or NaN valued and throw abort if that's the case
+      if (Kokkos::isinf(f[i]) || Kokkos::isnan(f[i])) {
+        Kokkos::abort("Error: NaN or Inf value found in GOW17 `f` array\n");
+      }
     }
 
     // convert to code units
