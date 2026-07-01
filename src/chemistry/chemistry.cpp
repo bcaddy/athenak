@@ -104,10 +104,6 @@ void Chemistry::UpdateChemistry(ODESettings const& ode_settings,
   // The timestep
   Real const dt = pmy_pack->pmesh->dt;
 
-  // ----- Variables for the ODE solver -----
-  // For reporting if the ODE solver doesn't converge
-  DvceArray0D<bool> chemisty_ode_failure("chemisty_ode_failure", false);
-
   // ----- Get the unit conversions and constants we'll need -----
   Real const time_cgs = pmy_pack->punit->time_cgs();
   Real const energy_density_cgs = pmy_pack->punit->pressure_cgs();
@@ -150,11 +146,6 @@ void Chemistry::UpdateChemistry(ODESettings const& ode_settings,
         ODE_Solver_t ode_solver(ode_settings, chem_net, t_start, dt);
         ode_solver.SolveODE();
 
-        // check if the ODE solver failed
-        if (ode_solver.failed) {
-          chemisty_ode_failure() = ode_solver.failed;
-        }
-
         // ------ Write cell values back out ------
         // Chemistry scalars
         grid_idx = species_start_idx;
@@ -166,13 +157,6 @@ void Chemistry::UpdateChemistry(ODESettings const& ode_settings,
         // Write internal energy
         w0(mb_idx, IEN, k, j, i) = chem_net.y(Network_t::IIE);
       });
-
-  // Get the failure flag and check for failure
-  bool chemisty_ode_failure_h;
-  Kokkos::deep_copy(chemisty_ode_failure_h, chemisty_ode_failure);
-  if (chemisty_ode_failure_h) {
-    std::cerr << "The chemistry ODE solver failed to converge." << std::endl;
-  }
 }
 
 /*!

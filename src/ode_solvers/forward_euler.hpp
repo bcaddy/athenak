@@ -71,8 +71,6 @@ class ForwardEuler {
   const Real t_start;
   /// The amount of time to evolve the system of equations
   const Real dt;
-  /// If the solver failed to converge within the allocated number of cycles
-  bool failed = false;
 
   /*!
    * \brief Get the settings for the Forward Euler ODE solver from the input
@@ -138,8 +136,9 @@ class ForwardEuler {
       // check if convergence is established within fe_n_subcycle_max.  If not,
       // trigger a failure
       if (icount > fe_n_subcycle_max) {
-        failed = true;
-        break;
+        Kokkos::abort(
+            "The Forward Euler ODE solver failed to converge within the "
+            "maximum number of iterations.");
       }
     }
   }
