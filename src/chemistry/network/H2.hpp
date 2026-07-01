@@ -37,8 +37,9 @@ struct H2Settings {
 class H2Network {
  public:
   KOKKOS_FUNCTION H2Network(H2Settings const settings, Real const density,
-                            Real const density_cgs, Real const mu_H,
-                            Real const gamma, Real const hydrogen_mass_cgs,
+                            DvceArray1D<Real> ir, Real const density_cgs,
+                            Real const mu_H, Real const gamma,
+                            Real const hydrogen_mass_cgs,
                             Real const units_time_cgs,
                             Real const units_energy_density_cgs)
       : n_H(density * density_cgs / (mu_H * hydrogen_mass_cgs)),

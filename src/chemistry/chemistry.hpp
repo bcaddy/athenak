@@ -17,6 +17,7 @@
 #include "athena.hpp"
 #include "bvals/bvals.hpp"
 #include "chemistry/network/chemistry_networks.hpp"
+#include "chemistry/radiation.hpp"
 #include "parameter_input.hpp"
 #include "tasklist/task_list.hpp"
 
@@ -131,6 +132,9 @@ class Chemistry {
   MeshBlockPack* const pmy_pack;
 
   ParameterInput* my_pin;
+
+  // Chemistry radiation
+  const chemistry::Radiation pchem_rad;
 
   // These indicate if hydro or MHD is in use
   bool const is_hydro_enabled;

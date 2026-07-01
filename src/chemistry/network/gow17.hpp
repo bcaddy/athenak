@@ -67,8 +67,9 @@ struct GOW17Settings {
 class GOW17Network {
  public:
   KOKKOS_FUNCTION GOW17Network(GOW17Settings const settings, Real const density,
-                               Real const density_cgs, Real const mu_H,
-                               Real const gamma, Real const hydrogen_mass_cgs,
+                               DvceArray1D<Real> ir, Real const density_cgs,
+                               Real const mu_H, Real const gamma,
+                               Real const hydrogen_mass_cgs,
                                Real const units_time_cgs,
                                Real const units_energy_density_cgs)
       : n_H(density * density_cgs / (mu_H * hydrogen_mass_cgs)),
@@ -88,7 +89,12 @@ class GOW17Network {
         temperature_max_cooling_nm(settings.temperature_max_cooling_nm),
         Leff_CO_max(settings.Leff_CO_max),
         H2_rovib_cooling(settings.H2_rovib_cooling),
-        isothermal_temperature_(settings.isothermal_temperature) {}
+        isothermal_temperature_(settings.isothermal_temperature) {
+    // Load radiation array. Won't work for non-constant radiation
+    for (size_t i = 0; i < n_freq_; i++) {
+      rad_(i) = ir(i);
+    }
+  }
 
   // ----- Number of equations -----
   static constexpr int neqs = 13;

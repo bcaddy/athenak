@@ -33,7 +33,8 @@ Chemistry::Chemistry(MeshBlockPack* ppack, ParameterInput* pin)
       nscalars_chemistry(SetupGetNumChemistryScalars(ppack, pin, -1, false)),
       mu_H(pin->GetOrAddReal("chemistry", "mu_H", 1.4)),
       chemistry_scalars_first_idx(ComputeChemistryScalarsStartIndex()),
-      my_pin(pin) {
+      my_pin(pin),
+      pchem_rad(ppack, pin) {
   // Verify that units are enables
   if (!pin->DoesBlockExist("units")) {
     std::cerr
@@ -112,6 +113,9 @@ void Chemistry::UpdateChemistry(ODESettings const& ode_settings,
   Real const gamma = pmy_pack->phydro->peos->eos_data.gamma;
   Real const mu_H_local = mu_H;
 
+  // ----- Get radiation stuff -----
+  const auto ir = pchem_rad.ir;
+
   // ----- Get all the loop limits and generate the parallel policy ------
   // NOLINTNEXTLINE(whitespace/braces)
   auto const [start_limit, end_limit] = LoopLimitsAllCells();
@@ -124,7 +128,7 @@ void Chemistry::UpdateChemistry(ODESettings const& ode_settings,
       KOKKOS_LAMBDA(const int& mb_idx, const int& k, const int& j,
                     const int& i) {
         // Create the chemisty object
-        Network_t chem_net(network_settings, w0(mb_idx, IDN, k, j, i),
+        Network_t chem_net(network_settings, w0(mb_idx, IDN, k, j, i), ir,
                            density_cgs, mu_H_local, gamma, hydrogen_mass_cgs,
                            time_cgs, energy_density_cgs);
 
