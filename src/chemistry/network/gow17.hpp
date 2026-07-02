@@ -883,10 +883,18 @@ class GOW17Network {
     //   (4) Si+ + *e + gr -> *Si + gr
     //   , rate dependent on e abundance.
     if (y[Ie_g] > small_real) {
+      constexpr Real cHp_[7] = {12.25,    8.074e-6, 1.378,   5.087e2,
+                                1.586e-2, 0.4723,   1.102e-5};
+      constexpr Real cCp_[7] = {45.58,    6.089e-3, 1.128,   4.331e2,
+                                4.845e-2, 0.8120,   1.333e-4};
+      constexpr Real cHep_[7] = {5.572,    3.185e-7, 1.512,   5.115e3,
+                                 3.903e-7, 0.4956,   5.494e-7};
+      constexpr Real cSip_[7] = {2.166,    5.678e-8, 1.874,   4.375e4,
+                                 1.635e-6, 0.8964,   7.538e-5};
       // set lower limit to radiation field in calculating kgr_ to avoid nan
       // values.
       Real GPE_limit = 1.0e-10;
-      Real GPE0 = rad_[index_gpe_];
+      Real GPE0 = rad_[irad_GPE];
       if (GPE0 < GPE_limit) {
         GPE0 = GPE_limit;
       }
