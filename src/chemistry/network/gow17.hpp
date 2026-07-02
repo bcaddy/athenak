@@ -550,9 +550,6 @@ class GOW17Network {
   // -----Si, CR induced photo ionization, experimenting----
   // (6) cr + Si -> Si+ + e, UMIST12
   static constexpr int n_cr_ = 7;
-  /// coefficients of rates relative to H in s^-1
-  static constexpr Real kcr_base_[n_cr_] = {2.0, 1.1,  1.0,  520.,
-                                            92., 6.52, 8400.};
   /// rates for cosmic-ray reactions  in s^-1
   RegisterArray<Real, n_cr_> kcr_;
   /// reactant index
@@ -707,7 +704,9 @@ class GOW17Network {
     const Real kida_fac = (0.62 + 45.41 / Kokkos::sqrt(T)) * n_H;
     Real t1_CHx, t2_CHx;
 
-// cosmic ray reactions
+    // cosmic ray reactions
+    /// coefficients of rates relative to H in s^-1
+    constexpr Real kcr_base_[n_cr_] = {2.0, 1.1, 1.0, 520., 92., 6.52, 8400.};
 #pragma unroll
     for (int i = 0; i < n_cr_; i++) {
       kcr_[i] = kcr_base_[i] * rad_[irad_CR];
@@ -726,39 +725,57 @@ class GOW17Network {
     kcr_[4] *= 2 * y[IH2];
     kcr_[6] *= 2 * y[IH2];
     // 2 body reactions
+    constexpr Real k2Texp[n_2body_] = {
+        0.0,  -0.190, 0.0,    0.0, 0.0, -1.3, 0.0, 0.0,   -0.339, -0.5, -0.52,
+        0.0,  -0.64,  0.042,  0.0, 0.0, 0.0,  0.0, -0.52, 0.0,    0.26, 0.0,
+        -1.3, -0.62,  -0.190, 0.0, 0.0, 0.0,  0.0, 0.0,   0.0};
+    constexpr Real k2body_base[n_2body_] = {
+        1.00,    1.99e-9,  1.7e-9,    1.26e-13, 1.6e-9,        3.3e-13 * 0.7,
+        1.00,    7.0e-11,  7.95e-10,  1.0e-11,  4.54e-7,       1.00,
+        1.06e-5, 1.76e-9,  2.753e-14, 1.00,     1.00,          1.00,
+        8.46e-7, 7.20e-15, 2.81e-11,  3.5e-11,  3.3e-13 * 0.3, 1.46e-10,
+        1.99e-9, 1.00,     6.4e-10,   1.00,     1.00,          1.6e-9,
+        1.6e-9};
+#pragma unroll
     for (int i = 0; i < n_2body_; i++) {
-      k2body_[i] = k2body_base_[i] * std::pow(T, k2Texp_[i]) * n_H;
+      k2body_[i] = k2body_base[i] * Kokkos::pow(T, k2Texp[i]) * n_H;
     }
+
     // Special treatment of rates for some equations
     // (0) H3+ + *C -> CH + H2         --Vissapragada2016 new rates
-    t1_CHx = A_kCHx_ * std::pow(300. / T, n_kCHx_);
-    t2_CHx = c_kCHx_[0] * std::exp(-Ti_kCHx_[0] / T) +
-             c_kCHx_[1] * std::exp(-Ti_kCHx_[1] / T) +
-             c_kCHx_[2] * std::exp(-Ti_kCHx_[2] / T) +
-             c_kCHx_[3] * std::exp(-Ti_kCHx_[3] / T);
-    k2body_[0] *= t1_CHx + std::pow(T, -1.5) * t2_CHx;
+    // rates for H3+ + C forming CH+ and CH2+
+    constexpr Real A_kCHx_ = 1.04e-9;
+    constexpr Real n_kCHx_ = 2.31e-3;
+    constexpr Real c_kCHx_[4] = {3.4e-8, 6.97e-9, 1.31e-7, 1.51e-4};
+    constexpr Real Ti_kCHx_[4] = {7.62, 1.38, 2.66e1, 8.11e3};
+    t1_CHx = A_kCHx_ * Kokkos::pow(300. / T, n_kCHx_);
+    t2_CHx = c_kCHx_[0] * Kokkos::exp(-Ti_kCHx_[0] / T) +
+             c_kCHx_[1] * Kokkos::exp(-Ti_kCHx_[1] / T) +
+             c_kCHx_[2] * Kokkos::exp(-Ti_kCHx_[2] / T) +
+             c_kCHx_[3] * Kokkos::exp(-Ti_kCHx_[3] / T);
+    k2body_[0] *= t1_CHx + Kokkos::pow(T, -1.5) * t2_CHx;
     // (3) He+ + H2 -> H+ + *He + *H   --fit to Schauer1989
-    k2body_[3] *= std::exp(-22.5 / T);
+    k2body_[3] *= Kokkos::exp(-22.5 / T);
     // (5) C+ + H2 -> CH + *H         -- schematic reaction for C+ + H2 ->
-    CH2 + k2body_[5] *= std::exp(-23. / T);
+    CH2 + k2body_[5] *= Kokkos::exp(-23. / T);
     // ---branching of C+ + H2 ------
     // (22) C+ + H2 + *e -> *C + *H + *H
-    k2body_[22] *= std::exp(-23. / T);
+    k2body_[22] *= Kokkos::exp(-23. / T);
     // (6) C+ + OH -> HCO+             -- Schematic equation for C+ + OH ->
     CO +
         // + H. Use rates in KIDA website.
         k2body_[6] = 9.15e-10 * kida_fac;
     // (8) OH + *C -> CO + *H          --exp(0.108/T)
-    k2body_[8] *= std::exp(0.108 / T);
+    k2body_[8] *= Kokkos::exp(0.108 / T);
     // (9) He+ + *e -> *He             --(17) Case B
     k2body_[9] *= 11.19 + (-1.676 + (-0.2852 + 0.04433 * logT) * logT) * logT;
     // (11) C+ + *e -> *C              -- Include RR and DR, Badnell2003,
     2006. k2body_[11] = CII_rec_rate_(T) * n_H;
     // (13) H2+ + H2 -> H3+ + *H       --(54) exp(-T/46600)
-    k2body_[13] *= std::exp(-T / 46600.);
+    k2body_[13] *= Kokkos::exp(-T / 46600.);
     // (14) H+ + *e -> *H              --(12) Case B
-    k2body_[14] *= std::pow(315614.0 / T, 1.5) *
-                   std::pow(1.0 + std::pow(115188.0 / T, 0.407), -2.242);
+    k2body_[14] *= Kokkos::pow(315614.0 / T, 1.5) *
+                   Kokkos::pow(1.0 + Kokkos::pow(115188.0 / T, 0.407), -2.242);
     //--- H2O+ + e branching--
     // (1) H3+ + *O -> OH + H2
     // (24) H3+ + *O + *e -> H2 + *O + *H
@@ -766,7 +783,7 @@ class GOW17Network {
     if (y[ige_] < small_) {
       h2oplus_ratio = 1.0e10;
     } else {
-      h2oplus_ratio = 6e-10 * y[IH2] / (5.3e-6 / std::sqrt(T) * y[ige_]);
+      h2oplus_ratio = 6e-10 * y[IH2] / (5.3e-6 / Kokkos::sqrt(T) * y[ige_]);
     }
     fac_H2Oplus_H2 = h2oplus_ratio / (h2oplus_ratio + 1.);
     fac_H2Oplus_e = 1. / (h2oplus_ratio + 1.);
@@ -780,10 +797,10 @@ class GOW17Network {
     //  (29) O+ + H2 -> OH + *H     -- branching of H2O+
     //  (30) O+ + H2 -> *O + *H + *H  -- branching of H2O+ */
     k2body_[27] *=
-        (1.1e-11 * std::pow(T, 0.517) + 4.0e-10 * std::pow(T, 6.69e-3)) *
-        std::exp(-227. / T);
+        (1.1e-11 * Kokkos::pow(T, 0.517) + 4.0e-10 * Kokkos::pow(T, 6.69e-3)) *
+        Kokkos::exp(-227. / T);
     k2body_[28] *=
-        4.99e-11 * std::pow(T, 0.405) + 7.5e-10 * std::pow(T, -0.458);
+        4.99e-11 * Kokkos::pow(T, 0.405) + 7.5e-10 * Kokkos::pow(T, -0.458);
     k2body_[29] *= fac_H2Oplus_H2;
     k2body_[30] *= fac_H2Oplus_e;
 
@@ -793,16 +810,16 @@ class GOW17Network {
       // (15) H2 + *H -> 3 *H
       // (16) H2 + H2 -> H2 + 2 *H
       // --(9) Density dependent. See Glover+MacLow2007
-      k9l = 6.67e-12 * std::sqrt(T_collisional) *
-            std::exp(-(1. + 63590. / T_collisional));
-      k9h = 3.52e-9 * std::exp(-43900.0 / T_collisional);
-      k10l = 5.996e-30 * std::pow(T_collisional, 4.1881) /
-             std::pow((1.0 + 6.761e-6 * T_collisional), 5.6881) *
-             std::exp(-54657.4 / T_collisional);
-      k10h = 1.3e-9 * std::exp(-53300.0 / T_collisional);
-      ncrH = std::pow(
+      k9l = 6.67e-12 * Kokkos::sqrt(T_collisional) *
+            Kokkos::exp(-(1. + 63590. / T_collisional));
+      k9h = 3.52e-9 * Kokkos::exp(-43900.0 / T_collisional);
+      k10l = 5.996e-30 * Kokkos::pow(T_collisional, 4.1881) /
+             Kokkos::pow((1.0 + 6.761e-6 * T_collisional), 5.6881) *
+             Kokkos::exp(-54657.4 / T_collisional);
+      k10h = 1.3e-9 * Kokkos::exp(-53300.0 / T_collisional);
+      ncrH = Kokkos::pow(
           10, (3.0 - 0.416 * logT4coll - 0.327 * logT4coll * logT4coll));
-      ncrH2 = std::pow(
+      ncrH2 = Kokkos::pow(
           10, (4.845 - 1.3 * logT4coll + 1.62 * logT4coll * logT4coll));
       div_ncr = y[IH_g] / (ncrH + small_) + y[IH2] / (ncrH2 + small_);
       if (div_ncr < small_) {
@@ -811,14 +828,14 @@ class GOW17Network {
         ncr = 1. / div_ncr;
       }
       n2ncr = n_H / ncr;
-      k2body_[15] = std::pow(10, std::log10(k9h) * n2ncr / (1. + n2ncr) +
-                                     std::log10(k9l) / (1. + n2ncr)) *
+      k2body_[15] = Kokkos::pow(10, Kokkos::log10(k9h) * n2ncr / (1. + n2ncr) +
+                                        Kokkos::log10(k9l) / (1. + n2ncr)) *
                     n_H;
-      k2body_[16] = std::pow(10, std::log10(k10h) * n2ncr / (1. + n2ncr) +
-                                     std::log10(k10l) / (1. + n2ncr)) *
+      k2body_[16] = Kokkos::pow(10, Kokkos::log10(k10h) * n2ncr / (1. + n2ncr) +
+                                        Kokkos::log10(k10l) / (1. + n2ncr)) *
                     n_H;
       // (17) *H + *e -> H+ + 2 *e       --(11) Relates to Te
-      k2body_[17] *= std::exp(
+      k2body_[17] *= Kokkos::exp(
           -3.271396786e1 +
           (1.35365560e1 +
            (-5.73932875 +
@@ -860,35 +877,39 @@ class GOW17Network {
       if (GPE0 < GPE_limit) {
         GPE0 = GPE_limit;
       }
-      psi_gr_fac_ = 1.7 * GPE0 * std::sqrt(T) / n_H;
+      psi_gr_fac_ = 1.7 * GPE0 * Kokkos::sqrt(T) / n_H;
       psi = psi_gr_fac_ / y[ige_];
       kgr_[1] =
           1.0e-14 * cHp_[0] /
           (1.0 +
-           cHp_[1] * std::pow(psi, cHp_[2]) *
-               (1.0 + cHp_[3] * std::pow(T, cHp_[4]) *
-                          std::pow(psi, -cHp_[5] - cHp_[6] * std::log(T)))) *
+           cHp_[1] * Kokkos::pow(psi, cHp_[2]) *
+               (1.0 +
+                cHp_[3] * Kokkos::pow(T, cHp_[4]) *
+                    Kokkos::pow(psi, -cHp_[5] - cHp_[6] * Kokkos::log(T)))) *
           n_H * zd_;
       kgr_[2] =
           1.0e-14 * cCp_[0] /
           (1.0 +
-           cCp_[1] * std::pow(psi, cCp_[2]) *
-               (1.0 + cCp_[3] * std::pow(T, cCp_[4]) *
-                          std::pow(psi, -cCp_[5] - cCp_[6] * std::log(T)))) *
+           cCp_[1] * Kokkos::pow(psi, cCp_[2]) *
+               (1.0 +
+                cCp_[3] * Kokkos::pow(T, cCp_[4]) *
+                    Kokkos::pow(psi, -cCp_[5] - cCp_[6] * Kokkos::log(T)))) *
           n_H * zd_;
       kgr_[3] =
           1.0e-14 * cHep_[0] /
           (1.0 +
-           cHep_[1] * std::pow(psi, cHep_[2]) *
-               (1.0 + cHep_[3] * std::pow(T, cHep_[4]) *
-                          std::pow(psi, -cHep_[5] - cHep_[6] * std::log(T)))) *
+           cHep_[1] * Kokkos::pow(psi, cHep_[2]) *
+               (1.0 +
+                cHep_[3] * Kokkos::pow(T, cHep_[4]) *
+                    Kokkos::pow(psi, -cHep_[5] - cHep_[6] * Kokkos::log(T)))) *
           n_H * zd_;
       kgr_[4] =
           1.0e-14 * cSip_[0] /
           (1.0 +
-           cSip_[1] * std::pow(psi, cSip_[2]) *
-               (1.0 + cSip_[3] * std::pow(T, cSip_[4]) *
-                          std::pow(psi, -cSip_[5] - cSip_[6] * std::log(T)))) *
+           cSip_[1] * Kokkos::pow(psi, cSip_[2]) *
+               (1.0 +
+                cSip_[3] * Kokkos::pow(T, cSip_[4]) *
+                    Kokkos::pow(psi, -cSip_[5] - cSip_[6] * Kokkos::log(T)))) *
           n_H * zd_;
     } else {
       for (int i = 1; i < 5; i++) {
