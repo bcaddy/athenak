@@ -45,6 +45,8 @@ struct GOW17Settings {
   Real Leff_CO_max;
   /// Whether or not to use H2 rovibrational cooling
   bool H2_rovib_cooling;
+  // H2 formation rate on grains
+  bool is_kgrH2_const;
 };
 
 /*!
@@ -90,7 +92,8 @@ class GOW17Network {
         Leff_CO_max(settings.Leff_CO_max),
         H2_rovib_cooling(settings.H2_rovib_cooling),
         isothermal_temperature_(settings.isothermal_temperature),
-        rad_(ir) {}
+        rad_(ir),
+        is_kgrH2_const(settings.is_kgrH2_const) {}
 
   // ----- Number of equations -----
   static constexpr int neqs = 13;
@@ -169,6 +172,8 @@ class GOW17Network {
   const Real Leff_CO_max;
   /// Whether or not to use H2 rovibrational cooling
   const bool H2_rovib_cooling;
+  // H2 formation rate on grains
+  const bool is_kgrH2_const;
 
   // ----- Member Functions -----
   /*!
@@ -226,6 +231,9 @@ class GOW17Network {
         pin->GetOrAddReal("chemistry", "GOW17_Leff_CO_max", 3.0e20);
     output.H2_rovib_cooling =
         pin->GetOrAddBoolean("chemistry", "GOW17_H2_rovib_cooling", true);
+    // H2 formation rate on grains
+    output.is_kgrH2_const_ =
+        pin->GetOrAddBoolean("chemistry", "is_kgrH2_const", false);
 
     return output;
   }
@@ -859,6 +867,9 @@ class GOW17Network {
     }
 
     // photo reactions
+    constexpr Real kph_base_[n_ph_] = {3.5e-10, 9.1e-10, 2.4e-10,
+                                       3.8e-10, 5.7e-11, 4.5e-9};
+#pragma unroll
     for (int i = 0; i < n_ph_; i++) {
       kph_[i] = kph_base_[i] * rad_[i];
     }
@@ -927,6 +938,7 @@ class GOW17Network {
    * \param T The temperature
    * \return Real The rate for CII recombination
    */
+  KOKKOS_FUNCTION
   Real CII_rec_rate_(const Real T) {
     constexpr Real A = 2.995e-9;
     constexpr Real B = 0.7849;
@@ -944,6 +956,31 @@ class GOW17Network {
                                       9.793e-09 * Kokkos::exp(-7.38e1 / T) +
                                       1.634e-06 * Kokkos::exp(-1.523e+04 / T));
     return (alpha_rr + alpha_dr);
+  }
+
+  //----------------------------------------------------------------------------------------
+  /*!
+   * \brief H2 formation rate on dust grains. TIGRESS-NCR (Kim+23)
+   * implementation.
+   *
+   * \param T The temperature
+   * \return Real H2 formation rate on dust grains
+   */
+  KOKKOS_FUNCTION
+  Real get_kgr_H2_(const Real T) {
+    Real kgr;
+    const Real kgr0 = 3.0e-17;
+    if (is_kgrH2_const) {
+      // Use temperature independent rate
+      kgr = kgr0;
+    } else {
+      // Use temperature dependent rate from Hollenbach & McKee (1979)
+      // Taking Tgr2 = 0 and renormalized to have kgr ~ kgr_H2 near 200>T>50
+      const Real T2 = T * 1e-2;
+      kgr = kgr0 * Kokkos::sqrt(T2) * 2.0 /
+            (1 + 0.4 * Kokkos::sqrt(T2) + 0.2 * T2 + 0.08 * T2 * T2);
+    }
+    return kgr;
   }
 };  // class GOW17Network
 };  // namespace chemistry
