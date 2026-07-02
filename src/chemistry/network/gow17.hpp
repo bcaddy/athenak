@@ -394,6 +394,7 @@ class GOW17Network {
     UpdateRates_();
 
     // // cosmic ray reactions
+    // #pragma unroll
     // for (int i = 0; i < n_cr_; i++) {
     //   rate = kcr_[i] * yprev[incr_[i]];
     //   ydotg[incr_[i]] -= rate;
@@ -538,6 +539,28 @@ class GOW17Network {
   enum : size_t { igr_H, igr_Hp, igr_Cp, igr_Hep, igr_Sip };
 
   // ----- Chemical Network -----
+  // cosmic ray chemistry network
+  // (0) cr + H2 -> H2+ + *e
+  // (1) cr + *He -> He+ + *e
+  // (2) cr + *H  -> H+ + *e
+  // -----added as Clark + Glover 2015----
+  // (3) cr + *C -> C+ + *e     --including direct and cr induce photo reactions
+  // (4) crphoto + CO -> *O + *C
+  // (5) cr + CO -> HCO+ + e  --schematic for cr + CO -> CO+ + e
+  // -----Si, CR induced photo ionization, experimenting----
+  // (6) cr + Si -> Si+ + e, UMIST12
+  static constexpr int n_cr_ = 7;
+  /// coefficients of rates relative to H in s^-1
+  static constexpr Real kcr_base_[n_cr_] = {2.0, 1.1,  1.0,  520.,
+                                            92., 6.52, 8400.};
+  /// rates for cosmic-ray reactions  in s^-1
+  RegisterArray<Real, n_cr_> kcr_;
+  /// reactant index
+  const int incr_[n_cr_] = {IH2, IHe_g, IH_g, IC_g, ICO, ICO_, ISi_g};
+  /// product index
+  const int outcr_[n_cr_] = {IH2_plus, IHE_plus,  IH_plus, IC_plus,
+                             IO_g,     IHCO_plus, ISi_plus};
+
   // clang-format off
   // 2 body reactions
   // NOTE: photons from recombination are ignored
@@ -677,203 +700,201 @@ class GOW17Network {
     const Real logT4coll = Kokkos::log10(T_collisional / 1.0e4);
     const Real lnTecoll = Kokkos::log(T_collisional * 8.6173e-5);
 
-    // Real ncr, n2ncr;
-    // Real psi;        // H+ grain recombination parameter
-    // Real kcr_H_fac;  // ratio of total rate to primary rate
-    // Real psi_gr_fac_;
-    // const Real kida_fac = (0.62 + 45.41 / Kokkos::sqrt(T)) * n_H;
-    // Real t1_CHx, t2_CHx;
+    Real ncr, n2ncr;
+    Real psi;        // H+ grain recombination parameter
+    Real kcr_H_fac;  // ratio of total rate to primary rate
+    Real psi_gr_fac_;
+    const Real kida_fac = (0.62 + 45.41 / Kokkos::sqrt(T)) * n_H;
+    Real t1_CHx, t2_CHx;
 
-    // // cosmic ray reactions
-    // for (int i = 0; i < n_cr_; i++) {
-    //   kcr_[i] = kcr_base_[i] * rad_[index_cr_];
-    // }
-    // // cosmic ray induced photo-reactions, proportional to x(H2)
-    // //  (0) cr + H2 -> H2+ + *e
-    // //  (1) cr + *He -> He+ + *e
-    // //  (2) cr + *H  -> H+ + *e
-    // //  (3) cr + *C -> C+ + *e     --including direct and cr induce photo
-    // //  reactions (4) crphoto + CO -> *O + *C (5) cr + CO -> HCO+ + e
-    // //  --schematic for cr + CO -> CO+ + e (6) cr + Si -> Si+ + e, UMIST12
-    // kcr_H_fac = 1.15 * 2 * y[iH2_] + 1.5 * y[igH_];
-    // kcr_[0] *= kcr_H_fac;
-    // kcr_[2] *= kcr_H_fac;
-    // kcr_[3] *= (2 * y[iH2_] + 3.85 / kcr_base_[3]);
-    // kcr_[4] *= 2 * y[iH2_];
-    // kcr_[6] *= 2 * y[iH2_];
-    // // 2 body reactions
-    // for (int i = 0; i < n_2body_; i++) {
-    //   k2body_[i] = k2body_base_[i] * std::pow(T, k2Texp_[i]) * nH_;
-    // }
-    // // Special treatment of rates for some equations
-    // // (0) H3+ + *C -> CH + H2         --Vissapragada2016 new rates
-    // t1_CHx = A_kCHx_ * std::pow(300. / T, n_kCHx_);
-    // t2_CHx = c_kCHx_[0] * std::exp(-Ti_kCHx_[0] / T) +
-    //          c_kCHx_[1] * std::exp(-Ti_kCHx_[1] / T) +
-    //          c_kCHx_[2] * std::exp(-Ti_kCHx_[2] / T) +
-    //          c_kCHx_[3] * std::exp(-Ti_kCHx_[3] / T);
-    // k2body_[0] *= t1_CHx + std::pow(T, -1.5) * t2_CHx;
-    // // (3) He+ + H2 -> H+ + *He + *H   --fit to Schauer1989
-    // k2body_[3] *= std::exp(-22.5 / T);
-    // // (5) C+ + H2 -> CH + *H         -- schematic reaction for C+ + H2 ->
-    // CH2+ k2body_[5] *= std::exp(-23. / T);
-    // // ---branching of C+ + H2 ------
-    // // (22) C+ + H2 + *e -> *C + *H + *H
-    // k2body_[22] *= std::exp(-23. / T);
-    // // (6) C+ + OH -> HCO+             -- Schematic equation for C+ + OH ->
-    // CO+
-    // // + H. Use rates in KIDA website.
-    // k2body_[6] = 9.15e-10 * kida_fac;
-    // // (8) OH + *C -> CO + *H          --exp(0.108/T)
-    // k2body_[8] *= std::exp(0.108 / T);
-    // // (9) He+ + *e -> *He             --(17) Case B
-    // k2body_[9] *= 11.19 + (-1.676 + (-0.2852 + 0.04433 * logT) * logT) *
-    // logT;
-    // // (11) C+ + *e -> *C              -- Include RR and DR, Badnell2003,
-    // 2006. k2body_[11] = CII_rec_rate_(T) * nH_;
-    // // (13) H2+ + H2 -> H3+ + *H       --(54) exp(-T/46600)
-    // k2body_[13] *= std::exp(-T / 46600.);
-    // // (14) H+ + *e -> *H              --(12) Case B
-    // k2body_[14] *= std::pow(315614.0 / T, 1.5) *
-    //                std::pow(1.0 + std::pow(115188.0 / T, 0.407), -2.242);
-    // //--- H2O+ + e branching--
-    // // (1) H3+ + *O -> OH + H2
-    // // (24) H3+ + *O + *e -> H2 + *O + *H
-    // Real h2oplus_ratio, fac_H2Oplus_H2, fac_H2Oplus_e;
-    // if (y[ige_] < small_) {
-    //   h2oplus_ratio = 1.0e10;
-    // } else {
-    //   h2oplus_ratio = 6e-10 * y[iH2_] / (5.3e-6 / std::sqrt(T) * y[ige_]);
-    // }
-    // fac_H2Oplus_H2 = h2oplus_ratio / (h2oplus_ratio + 1.);
-    // fac_H2Oplus_e = 1. / (h2oplus_ratio + 1.);
-    // k2body_[1] *= fac_H2Oplus_H2;
-    // k2body_[24] *= fac_H2Oplus_e;
-    // // (25) He+ + OH -> *H + *He + *O(O+)
-    // k2body_[25] = 1.35e-9 * kida_fac;
-    // //  --- O+ reactions ---
-    // //  (27) H+ + *O -> O+ + *H -- exp(-227/T)
-    // //  (28) O+ + *H -> H+ + *O
-    // //  (29) O+ + H2 -> OH + *H     -- branching of H2O+
-    // //  (30) O+ + H2 -> *O + *H + *H  -- branching of H2O+ */
-    // k2body_[27] *=
-    //     (1.1e-11 * std::pow(T, 0.517) + 4.0e-10 * std::pow(T, 6.69e-3)) *
-    //     std::exp(-227. / T);
-    // k2body_[28] *=
-    //     4.99e-11 * std::pow(T, 0.405) + 7.5e-10 * std::pow(T, -0.458);
-    // k2body_[29] *= fac_H2Oplus_H2;
-    // k2body_[30] *= fac_H2Oplus_e;
+// cosmic ray reactions
+#pragma unroll
+    for (int i = 0; i < n_cr_; i++) {
+      kcr_[i] = kcr_base_[i] * rad_[irad_CR];
+    }
+    // cosmic ray induced photo-reactions, proportional to x(H2)
+    //  (0) cr + H2 -> H2+ + *e
+    //  (1) cr + *He -> He+ + *e
+    //  (2) cr + *H  -> H+ + *e
+    //  (3) cr + *C -> C+ + *e     --including direct and cr induce photo
+    //  reactions (4) crphoto + CO -> *O + *C (5) cr + CO -> HCO+ + e
+    //  --schematic for cr + CO -> CO+ + e (6) cr + Si -> Si+ + e, UMIST12
+    kcr_H_fac = 1.15 * 2 * y[IH2] + 1.5 * y[IH_g];
+    kcr_[0] *= kcr_H_fac;
+    kcr_[2] *= kcr_H_fac;
+    kcr_[3] *= (2 * y[IH2] + 3.85 / kcr_base_[3]);
+    kcr_[4] *= 2 * y[IH2];
+    kcr_[6] *= 2 * y[IH2];
+    // 2 body reactions
+    for (int i = 0; i < n_2body_; i++) {
+      k2body_[i] = k2body_base_[i] * std::pow(T, k2Texp_[i]) * n_H;
+    }
+    // Special treatment of rates for some equations
+    // (0) H3+ + *C -> CH + H2         --Vissapragada2016 new rates
+    t1_CHx = A_kCHx_ * std::pow(300. / T, n_kCHx_);
+    t2_CHx = c_kCHx_[0] * std::exp(-Ti_kCHx_[0] / T) +
+             c_kCHx_[1] * std::exp(-Ti_kCHx_[1] / T) +
+             c_kCHx_[2] * std::exp(-Ti_kCHx_[2] / T) +
+             c_kCHx_[3] * std::exp(-Ti_kCHx_[3] / T);
+    k2body_[0] *= t1_CHx + std::pow(T, -1.5) * t2_CHx;
+    // (3) He+ + H2 -> H+ + *He + *H   --fit to Schauer1989
+    k2body_[3] *= std::exp(-22.5 / T);
+    // (5) C+ + H2 -> CH + *H         -- schematic reaction for C+ + H2 ->
+    CH2 + k2body_[5] *= std::exp(-23. / T);
+    // ---branching of C+ + H2 ------
+    // (22) C+ + H2 + *e -> *C + *H + *H
+    k2body_[22] *= std::exp(-23. / T);
+    // (6) C+ + OH -> HCO+             -- Schematic equation for C+ + OH ->
+    CO +
+        // + H. Use rates in KIDA website.
+        k2body_[6] = 9.15e-10 * kida_fac;
+    // (8) OH + *C -> CO + *H          --exp(0.108/T)
+    k2body_[8] *= std::exp(0.108 / T);
+    // (9) He+ + *e -> *He             --(17) Case B
+    k2body_[9] *= 11.19 + (-1.676 + (-0.2852 + 0.04433 * logT) * logT) * logT;
+    // (11) C+ + *e -> *C              -- Include RR and DR, Badnell2003,
+    2006. k2body_[11] = CII_rec_rate_(T) * n_H;
+    // (13) H2+ + H2 -> H3+ + *H       --(54) exp(-T/46600)
+    k2body_[13] *= std::exp(-T / 46600.);
+    // (14) H+ + *e -> *H              --(12) Case B
+    k2body_[14] *= std::pow(315614.0 / T, 1.5) *
+                   std::pow(1.0 + std::pow(115188.0 / T, 0.407), -2.242);
+    //--- H2O+ + e branching--
+    // (1) H3+ + *O -> OH + H2
+    // (24) H3+ + *O + *e -> H2 + *O + *H
+    Real h2oplus_ratio, fac_H2Oplus_H2, fac_H2Oplus_e;
+    if (y[ige_] < small_) {
+      h2oplus_ratio = 1.0e10;
+    } else {
+      h2oplus_ratio = 6e-10 * y[IH2] / (5.3e-6 / std::sqrt(T) * y[ige_]);
+    }
+    fac_H2Oplus_H2 = h2oplus_ratio / (h2oplus_ratio + 1.);
+    fac_H2Oplus_e = 1. / (h2oplus_ratio + 1.);
+    k2body_[1] *= fac_H2Oplus_H2;
+    k2body_[24] *= fac_H2Oplus_e;
+    // (25) He+ + OH -> *H + *He + *O(O+)
+    k2body_[25] = 1.35e-9 * kida_fac;
+    //  --- O+ reactions ---
+    //  (27) H+ + *O -> O+ + *H -- exp(-227/T)
+    //  (28) O+ + *H -> H+ + *O
+    //  (29) O+ + H2 -> OH + *H     -- branching of H2O+
+    //  (30) O+ + H2 -> *O + *H + *H  -- branching of H2O+ */
+    k2body_[27] *=
+        (1.1e-11 * std::pow(T, 0.517) + 4.0e-10 * std::pow(T, 6.69e-3)) *
+        std::exp(-227. / T);
+    k2body_[28] *=
+        4.99e-11 * std::pow(T, 0.405) + 7.5e-10 * std::pow(T, -0.458);
+    k2body_[29] *= fac_H2Oplus_H2;
+    k2body_[30] *= fac_H2Oplus_e;
 
-    // // Collisional dissociation, k>~1.0e-30 at T>~5e2.
-    // Real k9l, k9h, k10l, k10h, ncrH, ncrH2, div_ncr;
-    // if (T_collisional > temp_coll_ && nH_ > small_) {
-    //   // (15) H2 + *H -> 3 *H
-    //   // (16) H2 + H2 -> H2 + 2 *H
-    //   // --(9) Density dependent. See Glover+MacLow2007
-    //   k9l = 6.67e-12 * std::sqrt(T_collisional) * std::exp(-(1. + 63590. /
-    //   T_collisional)); k9h = 3.52e-9 * std::exp(-43900.0 / T_collisional);
-    //   k10l = 5.996e-30 * std::pow(T_collisional, 4.1881) /
-    //          std::pow((1.0 + 6.761e-6 * T_collisional), 5.6881) *
-    //          std::exp(-54657.4 / T_collisional);
-    //   k10h = 1.3e-9 * std::exp(-53300.0 / T_collisional);
-    //   ncrH = std::pow(
-    //       10, (3.0 - 0.416 * logT4coll - 0.327 * logT4coll * logT4coll));
-    //   ncrH2 = std::pow(
-    //       10, (4.845 - 1.3 * logT4coll + 1.62 * logT4coll * logT4coll));
-    //   div_ncr = y[igH_] / (ncrH + small_) + y[iH2_] / (ncrH2 + small_);
-    //   if (div_ncr < small_) {
-    //     ncr = 1. / small_;
-    //   } else {
-    //     ncr = 1. / div_ncr;
-    //   }
-    //   n2ncr = nH_ / ncr;
-    //   k2body_[15] = std::pow(10, std::log10(k9h) * n2ncr / (1. + n2ncr) +
-    //                                  std::log10(k9l) / (1. + n2ncr)) *
-    //                 nH_;
-    //   k2body_[16] = std::pow(10, std::log10(k10h) * n2ncr / (1. + n2ncr) +
-    //                                  std::log10(k10l) / (1. + n2ncr)) *
-    //                 nH_;
-    //   // (17) *H + *e -> H+ + 2 *e       --(11) Relates to Te
-    //   k2body_[17] *= std::exp(
-    //       -3.271396786e1 +
-    //       (1.35365560e1 +
-    //        (-5.73932875 +
-    //         (1.56315498 +
-    //          (-2.877056e-1 +
-    //           (3.48255977e-2 +
-    //            (-2.63197617e-3 +
-    //             (1.11954395e-4 + (-2.03914985e-6) * lnTecoll) * lnTecoll) *
-    //                lnTecoll) *
-    //               lnTecoll) *
-    //              lnTecoll) *
-    //             lnTecoll) *
-    //            lnTecoll) *
-    //           lnTecoll);  // NOLINT
-    // } else {
-    //   k2body_[15] = 0.;
-    //   k2body_[16] = 0.;
-    //   k2body_[17] = 0.;
-    // }
+    // Collisional dissociation, k>~1.0e-30 at T>~5e2.
+    Real k9l, k9h, k10l, k10h, ncrH, ncrH2, div_ncr;
+    if (T_collisional > temp_coll_ && n_H > small_) {
+      // (15) H2 + *H -> 3 *H
+      // (16) H2 + H2 -> H2 + 2 *H
+      // --(9) Density dependent. See Glover+MacLow2007
+      k9l = 6.67e-12 * std::sqrt(T_collisional) *
+            std::exp(-(1. + 63590. / T_collisional));
+      k9h = 3.52e-9 * std::exp(-43900.0 / T_collisional);
+      k10l = 5.996e-30 * std::pow(T_collisional, 4.1881) /
+             std::pow((1.0 + 6.761e-6 * T_collisional), 5.6881) *
+             std::exp(-54657.4 / T_collisional);
+      k10h = 1.3e-9 * std::exp(-53300.0 / T_collisional);
+      ncrH = std::pow(
+          10, (3.0 - 0.416 * logT4coll - 0.327 * logT4coll * logT4coll));
+      ncrH2 = std::pow(
+          10, (4.845 - 1.3 * logT4coll + 1.62 * logT4coll * logT4coll));
+      div_ncr = y[IH_g] / (ncrH + small_) + y[IH2] / (ncrH2 + small_);
+      if (div_ncr < small_) {
+        ncr = 1. / small_;
+      } else {
+        ncr = 1. / div_ncr;
+      }
+      n2ncr = n_H / ncr;
+      k2body_[15] = std::pow(10, std::log10(k9h) * n2ncr / (1. + n2ncr) +
+                                     std::log10(k9l) / (1. + n2ncr)) *
+                    n_H;
+      k2body_[16] = std::pow(10, std::log10(k10h) * n2ncr / (1. + n2ncr) +
+                                     std::log10(k10l) / (1. + n2ncr)) *
+                    n_H;
+      // (17) *H + *e -> H+ + 2 *e       --(11) Relates to Te
+      k2body_[17] *= std::exp(
+          -3.271396786e1 +
+          (1.35365560e1 +
+           (-5.73932875 +
+            (1.56315498 +
+             (-2.877056e-1 +
+              (3.48255977e-2 +
+               (-2.63197617e-3 +
+                (1.11954395e-4 + (-2.03914985e-6) * lnTecoll) * lnTecoll) *
+                   lnTecoll) *
+                  lnTecoll) *
+                 lnTecoll) *
+                lnTecoll) *
+               lnTecoll) *
+              lnTecoll);  // NOLINT
+    } else {
+      k2body_[15] = 0.;
+      k2body_[16] = 0.;
+      k2body_[17] = 0.;
+    }
 
-    // // photo reactions
-    // for (int i = 0; i < n_ph_; i++) {
-    //   kph_[i] = kph_base_[i] * rad_[i];
-    // }
+    // photo reactions
+    for (int i = 0; i < n_ph_; i++) {
+      kph_[i] = kph_base_[i] * rad_[i];
+    }
 
-    // // Grain assisted recombination of H and H2
-    // //   (0) *H + *H + gr -> H2 + gr
-    // kgr_[0] = get_kgr_H2_(T) * nH_ * zd_;
-    // //   (1) H+ + *e + gr -> *H + gr
-    // //   (2) C+ + *e + gr -> *C + gr
-    // //   (3) He+ + *e + gr -> *He + gr
-    // //   (4) Si+ + *e + gr -> *Si + gr
-    // //   , rate dependent on e abundance.
-    // if (y[ige_] > small_) {
-    //   // set lower limit to radiation field in calculating kgr_ to avoid nan
-    //   // values.
-    //   Real GPE_limit = 1.0e-10;
-    //   Real GPE0 = rad_[index_gpe_];
-    //   if (GPE0 < GPE_limit) {
-    //     GPE0 = GPE_limit;
-    //   }
-    //   psi_gr_fac_ = 1.7 * GPE0 * std::sqrt(T) / nH_;
-    //   psi = psi_gr_fac_ / y[ige_];
-    //   kgr_[1] =
-    //       1.0e-14 * cHp_[0] /
-    //       (1.0 +
-    //        cHp_[1] * std::pow(psi, cHp_[2]) *
-    //            (1.0 + cHp_[3] * std::pow(T, cHp_[4]) *
-    //                       std::pow(psi, -cHp_[5] - cHp_[6] * std::log(T)))) *
-    //       nH_ * zd_;
-    //   kgr_[2] =
-    //       1.0e-14 * cCp_[0] /
-    //       (1.0 +
-    //        cCp_[1] * std::pow(psi, cCp_[2]) *
-    //            (1.0 + cCp_[3] * std::pow(T, cCp_[4]) *
-    //                       std::pow(psi, -cCp_[5] - cCp_[6] * std::log(T)))) *
-    //       nH_ * zd_;
-    //   kgr_[3] =
-    //       1.0e-14 * cHep_[0] /
-    //       (1.0 +
-    //        cHep_[1] * std::pow(psi, cHep_[2]) *
-    //            (1.0 + cHep_[3] * std::pow(T, cHep_[4]) *
-    //                       std::pow(psi, -cHep_[5] - cHep_[6] * std::log(T))))
-    //                       *
-    //       nH_ * zd_;
-    //   kgr_[4] =
-    //       1.0e-14 * cSip_[0] /
-    //       (1.0 +
-    //        cSip_[1] * std::pow(psi, cSip_[2]) *
-    //            (1.0 + cSip_[3] * std::pow(T, cSip_[4]) *
-    //                       std::pow(psi, -cSip_[5] - cSip_[6] * std::log(T))))
-    //                       *
-    //       nH_ * zd_;
-    // } else {
-    //   for (int i = 1; i < 5; i++) {
-    //     kgr_[i] = 0.;
-    //   }
-    // }
-    return;
+    // Grain assisted recombination of H and H2
+    //   (0) *H + *H + gr -> H2 + gr
+    kgr_[0] = get_kgr_H2_(T) * n_H * zd_;
+    //   (1) H+ + *e + gr -> *H + gr
+    //   (2) C+ + *e + gr -> *C + gr
+    //   (3) He+ + *e + gr -> *He + gr
+    //   (4) Si+ + *e + gr -> *Si + gr
+    //   , rate dependent on e abundance.
+    if (y[ige_] > small_) {
+      // set lower limit to radiation field in calculating kgr_ to avoid nan
+      // values.
+      Real GPE_limit = 1.0e-10;
+      Real GPE0 = rad_[index_gpe_];
+      if (GPE0 < GPE_limit) {
+        GPE0 = GPE_limit;
+      }
+      psi_gr_fac_ = 1.7 * GPE0 * std::sqrt(T) / n_H;
+      psi = psi_gr_fac_ / y[ige_];
+      kgr_[1] =
+          1.0e-14 * cHp_[0] /
+          (1.0 +
+           cHp_[1] * std::pow(psi, cHp_[2]) *
+               (1.0 + cHp_[3] * std::pow(T, cHp_[4]) *
+                          std::pow(psi, -cHp_[5] - cHp_[6] * std::log(T)))) *
+          n_H * zd_;
+      kgr_[2] =
+          1.0e-14 * cCp_[0] /
+          (1.0 +
+           cCp_[1] * std::pow(psi, cCp_[2]) *
+               (1.0 + cCp_[3] * std::pow(T, cCp_[4]) *
+                          std::pow(psi, -cCp_[5] - cCp_[6] * std::log(T)))) *
+          n_H * zd_;
+      kgr_[3] =
+          1.0e-14 * cHep_[0] /
+          (1.0 +
+           cHep_[1] * std::pow(psi, cHep_[2]) *
+               (1.0 + cHep_[3] * std::pow(T, cHep_[4]) *
+                          std::pow(psi, -cHep_[5] - cHep_[6] * std::log(T)))) *
+          n_H * zd_;
+      kgr_[4] =
+          1.0e-14 * cSip_[0] /
+          (1.0 +
+           cSip_[1] * std::pow(psi, cSip_[2]) *
+               (1.0 + cSip_[3] * std::pow(T, cSip_[4]) *
+                          std::pow(psi, -cSip_[5] - cSip_[6] * std::log(T)))) *
+          n_H * zd_;
+    } else {
+      for (int i = 1; i < 5; i++) {
+        kgr_[i] = 0.;
+      }
+    }
   }
 };  // class GOW17Network
 };  // namespace chemistry
