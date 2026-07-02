@@ -411,27 +411,26 @@ class GOW17Network {
 
     // 2body reactions
     constexpr size_t in2body1_[n_2body_] = {
-        iH3plus_, iH3plus_, iH3plus_, iHeplus_, iHeplus_, iCplus_,   iCplus_,
-        iCHx_,    iOHx_,    iHeplus_, iH3plus_, iCplus_,  iHCOplus_, iH2plus_,
-        iHplus_,  iH2_,     iH2_,     igH_,     iH3plus_, iHeplus_,  iCHx_,
-        iOHx_,    iCplus_,  iSiplus_, iH3plus_, iHeplus_, iH2plus_,  iHplus_,
-        iOplus_,  iOplus_,  iOplus_};
+        IH3_plus, IH3_plus, IH3_plus, IHE_plus, IHE_plus, IC_plus,   IC_plus,
+        ICHx,     IOHx,     IHE_plus, IH3_plus, IC_plus,  IHCO_plus, IH2_plus,
+        IH_plus,  IH2,      IH2,      IH_g,     IH3_plus, IHE_plus,  ICHx,
+        IOHx,     IC_plus,  ISi_plus, IH3_plus, IHE_plus, IH2_plus,  IH_plus,
+        IO_plus,  IO_plus,  IO_plus};
     constexpr size_t in2body2_[n_2body_] = {
-        igC_, igO_, iCO_, iH2_,  iCO_, iH2_, iOHx_, igO_, igC_, ige_, ige_,
-        ige_, ige_, iH2_, ige_,  igH_, iH2_, ige_,  ige_, iH2_, igH_, igO_,
-        iH2_, ige_, igO_, iOHx_, igH_, igO_, igH_,  iH2_, iH2_};
+        IC_g, IO_g, ICO,  IH2,  ICO,  IH2,  IOHx, IO_g, IC_g, Ie_g, Ie_g,
+        Ie_g, Ie_g, IH2,  Ie_g, IH_g, IH2,  Ie_g, Ie_g, IH2,  IH_g, IO_g,
+        IH2,  Ie_g, IO_g, IOHx, IH_g, IO_g, IH_g, IH2,  IH2};
     // Note: output to ghost species doesn't matter. The abundances of ghost
     // species are updated using the other species at every timestep
     constexpr size_t out2body1_[n_2body_] = {
-        iCHx_,   iOHx_, iHCOplus_, iHplus_, iCplus_, iCHx_,    iHCOplus_,
-        iCO_,    iCO_,  igHe_,     iH2_,    igC_,    iCO_,     iH3plus_,
-        igH_,    igH_,  iH2_,      iHplus_, igH_,    iH2plus_, iH2_,
-        igO_,    igC_,  igSi_,     iH2_,    iOplus_, iHplus_,  iOplus_,
-        iHplus_, iOHx_, igO_};
+        ICHx, IOHx,    IHCO_plus, IH_plus,  IC_plus, ICHx,     IHCO_plus, ICO,
+        ICO,  IHe_g,   IH2,       IC_g,     ICO,     IH3_plus, IH_g,      IH_g,
+        IH2,  IH_plus, IH_g,      IH2_plus, IH2,     IO_g,     IC_g,      ISi_g,
+        IH2,  IO_plus, IH_plus,   IO_plus,  IH_plus, IOHx,     IO_g};
     constexpr size_t out2body2_[n_2body_] = {
-        iH2_, iH2_, iH2_, igHe_, igO_, igH_, igH_, igH_, igH_,  igH_, igH_,
-        igH_, igH_, igH_, igH_,  igH_, igH_, ige_, igH_, igHe_, igC_, igH_,
-        igH_, igH_, igO_, igHe_, iH2_, igH_, igO_, igH_, igH_};
+        IH2,  IH2,  IH2,  IHe_g, IO_g, IH_g, IH_g, IH_g, IH_g,  IH_g, IH_g,
+        IH_g, IH_g, IH_g, IH_g,  IH_g, IH_g, Ie_g, IH_g, IHe_g, IC_g, IH_g,
+        IH_g, IH_g, IO_g, IHe_g, IH2,  IH_g, IO_g, IH_g, IH_g};
     for (int i = 0; i < n_2body_; i++) {
       Real rate = k2body_[i] * y[in2body1_[i]] * y[in2body2_[i]];
       if (y[in2body1_[i]] < 0 && y[in2body2_[i]] < 0) {
@@ -444,9 +443,9 @@ class GOW17Network {
     }
 
     // photo reactions
-    constexpr size_t inph_[n_ph_] = {igC_, iCHx_, iCO_, iOHx_, iH2_, igSi_};
-    constexpr size_t outph1_[n_ph_] = {iCplus_, igC_, igC_,
-                                       igO_,    igH_, iSiplus_};
+    constexpr size_t inph_[n_ph_] = {IC_g, ICHx, ICO, IOHx, IH2, ISi_g};
+    constexpr size_t outph1_[n_ph_] = {IC_plus, IC_g, IC_g,
+                                       IO_g,    IH_g, ISi_plus};
     for (int i = 0; i < n_ph_; i++) {
       const Real rate = kph_[i] * y[inph_[i]];
       f[inph_[i]] -= rate;
@@ -454,9 +453,9 @@ class GOW17Network {
     }
 
     // grain assisted reactions
-    constexpr size_t ingr_[n_gr_] = {igH_, iHplus_, iCplus_, iHeplus_,
-                                     iSiplus_};
-    constexpr size_t outgr_[n_gr_] = {iH2_, igH_, igC_, igHe_, igSi_};
+    constexpr size_t ingr_[n_gr_] = {IH_g, IH_plus, IC_plus, IHE_plus,
+                                     ISi_plus};
+    constexpr size_t outgr_[n_gr_] = {IH2, IH_g, IC_g, IHe_g, ISi_g};
     for (int i = 0; i < n_gr_; i++) {
       const Real rate = kgr_[i] * y[ingr_[i]];
       f[ingr_[i]] -= rate;
