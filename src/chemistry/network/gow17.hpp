@@ -232,7 +232,7 @@ class GOW17Network {
     output.H2_rovib_cooling =
         pin->GetOrAddBoolean("chemistry", "GOW17_H2_rovib_cooling", true);
     // H2 formation rate on grains
-    output.is_kgrH2_const_ =
+    output.is_kgrH2_const =
         pin->GetOrAddBoolean("chemistry", "is_kgrH2_const", false);
 
     return output;
@@ -561,7 +561,7 @@ class GOW17Network {
   /// rates for cosmic-ray reactions  in s^-1
   RegisterArray<Real, n_cr_> kcr_;
   /// reactant index
-  const int incr_[n_cr_] = {IH2, IHe_g, IH_g, IC_g, ICO, ICO_, ISi_g};
+  const int incr_[n_cr_] = {IH2, IHe_g, IH_g, IC_g, ICO, ICO, ISi_g};
   /// product index
   const int outcr_[n_cr_] = {IH2_plus, IHE_plus,  IH_plus, IC_plus,
                              IO_g,     IHCO_plus, ISi_plus};
