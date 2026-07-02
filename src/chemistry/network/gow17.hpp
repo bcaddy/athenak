@@ -401,45 +401,39 @@ class GOW17Network {
 
     UpdateRates_();
 
-    // // cosmic ray reactions
-    // #pragma unroll
-    // for (int i = 0; i < n_cr_; i++) {
-    //   rate = kcr_[i] * yprev[incr_[i]];
-    //   ydotg[incr_[i]] -= rate;
-    //   ydotg[outcr_[i]] += rate;
-    // }
+    // cosmic ray reactions
+    #pragma unroll
+    for (int i = 0; i < n_cr_; i++) {
+      const Real rate = kcr_[i] * y[incr_[i]];
+      f[incr_[i]] -= rate;
+      f[outcr_[i]] += rate;
+    }
 
-    // // 2body reactions
-    // for (int i = 0; i < n_2body_; i++) {
-    //   rate = k2body_[i] * yprev[in2body1_[i]] * yprev[in2body2_[i]];
-    //   if (yprev[in2body1_[i]] < 0 && yprev[in2body2_[i]] < 0) {
-    //     rate *= -1.;
-    //   }
-    //   ydotg[in2body1_[i]] -= rate;
-    //   ydotg[in2body2_[i]] -= rate;
-    //   ydotg[out2body1_[i]] += rate;
-    //   ydotg[out2body2_[i]] += rate;
-    // }
+    // 2body reactions
+    for (int i = 0; i < n_2body_; i++) {
+      const Real rate = k2body_[i] * y[in2body1_[i]] * y[in2body2_[i]];
+      if (y[in2body1_[i]] < 0 && y[in2body2_[i]] < 0) {
+        rate *= -1.;
+      }
+      f[in2body1_[i]] -= rate;
+      f[in2body2_[i]] -= rate;
+      f[out2body1_[i]] += rate;
+      f[out2body2_[i]] += rate;
+    }
 
-    // // photo reactions
-    // for (int i = 0; i < n_ph_; i++) {
-    //   rate = kph_[i] * yprev[inph_[i]];
-    //   ydotg[inph_[i]] -= rate;
-    //   ydotg[outph1_[i]] += rate;
-    // }
+    // photo reactions
+    for (int i = 0; i < n_ph_; i++) {
+      const Real rate = kph_[i] * y[inph_[i]];
+      f[inph_[i]] -= rate;
+      f[outph1_[i]] += rate;
+    }
 
-    // // grain assisted reactions
-    // for (int i = 0; i < n_gr_; i++) {
-    //   rate = kgr_[i] * yprev[ingr_[i]];
-    //   ydotg[ingr_[i]] -= rate;
-    //   ydotg[outgr_[i]] += rate;
-    // }
-
-    // // set ydot to return
-    // for (int i = 0; i < NSPECIES; i++) {
-    //   // return in code units
-    //   ydot[i] = ydotg[i] * pmy_mb_->pmy_mesh->punit->code_time_cgs;
-    // }
+    // grain assisted reactions
+    for (int i = 0; i < n_gr_; i++) {
+      const Real rate = kgr_[i] * y[ingr_[i]];
+      f[ingr_[i]] -= rate;
+      f[outgr_[i]] += rate;
+    }
 
     // Verify abundances are positive, finite, and not NaN valued
     for (size_t i = 0; i < f.size; i++) {
