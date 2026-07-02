@@ -89,12 +89,8 @@ class GOW17Network {
         temperature_max_cooling_nm(settings.temperature_max_cooling_nm),
         Leff_CO_max(settings.Leff_CO_max),
         H2_rovib_cooling(settings.H2_rovib_cooling),
-        isothermal_temperature_(settings.isothermal_temperature) {
-    // Load radiation array. Won't work for non-constant radiation
-    for (size_t i = 0; i < n_freq_; i++) {
-      rad_(i) = ir(i);
-    }
-  }
+        isothermal_temperature_(settings.isothermal_temperature),
+        rad_(ir) {}
 
   // ----- Number of equations -----
   static constexpr int neqs = 13;
@@ -306,7 +302,7 @@ class GOW17Network {
     // cooling += 0.;  // Thermo::CoolingDustTd(zd,  n_H, T, 10.);
 
     // recombination of e on PAHs
-    cooling += Thermo::CoolingRec(zd, T, n_H * y[Ie_g], rad_[irad_GPE]);
+    cooling += Thermo::CoolingRec(zd, T, n_H * y[Ie_g], rad_(irad_GPE));
     // collisional dissociation of H2
     cooling += Thermo::CoolingH2diss(y[IH_g], y[IH2], k2body_[i2body_H2_H],
                                      k2body_[i2body_H2_H2]);
@@ -331,10 +327,10 @@ class GOW17Network {
 
     // Cosmic ray heating
     Real heating =
-        Thermo::HeatingCr(y[Ie_g], n_H, y[IH_g], y[IH2], rad_[irad_CR]);
+        Thermo::HeatingCr(y[Ie_g], n_H, y[IH_g], y[IH2], rad_(irad_CR));
 
     // photo electric effect on dust
-    heating += Thermo::HeatingPE(rad_[irad_GPE], zd, T, n_H * y[Ie_g]);
+    heating += Thermo::HeatingPE(rad_(irad_GPE), zd, T, n_H * y[Ie_g]);
 
     // H2 formation on dust grains
     const Real k_xH2_photo = kph_[iph_H2];
@@ -516,7 +512,8 @@ class GOW17Network {
   static constexpr int n_freq_ = n_ph_ + 2;
 
   /// radiation field intensity
-  RegisterArray<Real, n_freq_> rad_;
+  // RegisterArray<Real, n_freq_> rad_;
+  DvceArray1D<Real> rad_;
   /// enum for indexing into the rad_ array
   enum : size_t { irad_GPE = n_ph_, irad_CR };
 

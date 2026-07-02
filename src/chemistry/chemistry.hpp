@@ -101,6 +101,8 @@ class Chemistry {
     // internal energy equation
     if (network == "H2") {
       num_species = H2Network::neqs - 1;
+    } else if (network == "GOW17") {
+      num_species = GOW17Network::neqs - 1;
     }
 
     return num_species;

@@ -16,9 +16,9 @@ class Radiation {
  public:
   Radiation(MeshBlockPack* ppack, ParameterInput* pin) {
     // Get parameters
-    int nfreq = pin->GetOrAddInteger("chem_radiation", "n_frequency", 1);
-    const Real G0 = pin->GetReal("chem_radiation", "G0");
-    const Real cr_rate = pin->GetOrAddReal("chem_radiation", "CR", 2e-16);
+    int nfreq = pin->GetOrAddInteger("chemistry", "radiation_n_frequency", 1);
+    const Real G0 = pin->GetOrAddReal("chemistry", "radiation_G0", 1e-6);
+    const Real cr_rate = pin->GetOrAddReal("chemistry", "radiation_CR", 2e-16);
 
     // Assign values in host array
     HostArray1D<Real> ir_host("chemistry_ir_host", nfreq);

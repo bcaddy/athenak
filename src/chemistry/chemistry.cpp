@@ -208,6 +208,9 @@ std::string Chemistry::GetSpeciesNames(int const& scalar_idx) {
     if (network == "H2") {
       species_names.assign(H2Network::species_names.begin(),
                            H2Network::species_names.end());
+    } else if (network == "GOW17") {
+      species_names.assign(GOW17Network::species_names.begin(),
+                           GOW17Network::species_names.end());
     }
 
     // Create the mapping
