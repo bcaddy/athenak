@@ -919,6 +919,32 @@ class GOW17Network {
       }
     }
   }
+
+  //----------------------------------------------------------------------------------------
+  /*!
+   * \brief Calculate the rate for CII recombination
+   *
+   * \param T The temperature
+   * \return Real The rate for CII recombination
+   */
+  Real CII_rec_rate_(const Real T) {
+    constexpr Real A = 2.995e-9;
+    constexpr Real B = 0.7849;
+    constexpr Real T0 = 6.670e-3;
+    constexpr Real T1 = 1.943e6;
+    constexpr Real C = 0.1597;
+    constexpr Real T2 = 4.955e4;
+    const Real BN = B + C * Kokkos::exp(-T2 / T);
+    const Real term1 = Kokkos::sqrt(T / T0);
+    const Real term2 = Kokkos::sqrt(T / T1);
+    const Real alpha_rr = A / (term1 * Kokkos::pow(1.0 + term1, 1.0 - BN) *
+                               Kokkos::pow(1.0 + term2, 1.0 + BN));
+    const Real alpha_dr =
+        Kokkos::pow(T, -3.0 / 2.0) * (6.346e-9 * Kokkos::exp(-1.217e1 / T) +
+                                      9.793e-09 * Kokkos::exp(-7.38e1 / T) +
+                                      1.634e-06 * Kokkos::exp(-1.523e+04 / T));
+    return (alpha_rr + alpha_dr);
+  }
 };  // class GOW17Network
 };  // namespace chemistry
 #endif  // CHEMISTRY_NETWORK_GOW17_HPP_
