@@ -75,7 +75,8 @@ class GOW17Network {
                                Real const gamma, Real const hydrogen_mass_cgs,
                                Real const units_time_cgs,
                                Real const units_energy_density_cgs)
-      : n_H(w0(mb_idx, IDN, k, j, i) * density_cgs /
+      : w0_(w0),
+        n_H(w0(mb_idx, IDN, k, j, i) * density_cgs /
             (mu_H * hydrogen_mass_cgs)),
         gamma(gamma),
         units_time_cgs(units_time_cgs),
@@ -527,6 +528,9 @@ class GOW17Network {
   }
 
  private:
+  /// The primitive grid
+  const DvceArray5D<Real> w0_;
+
   /// The temperature to use for an isothermal EOS
   const Real isothermal_temperature_;
   // ----- Photo Reactions -----
