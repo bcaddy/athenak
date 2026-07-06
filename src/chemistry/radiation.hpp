@@ -22,10 +22,10 @@ class Radiation {
 
     // Assign values in host array
     HostArray1D<Real> ir_host("chemistry_ir_host", nfreq);
-    for (size_t i = 0; i < ir_host.size(); i++) {
+    for (size_t i = 0; i < ir_host.size() - 1; i++) {
       ir_host(i) = G0;
     }
-    ir_host(ir_host.size() - 1) += cr_rate;
+    ir_host(ir_host.size() - 1) = cr_rate;
 
     // Copy to device
     Kokkos::realloc(ir, ir_host.size());
