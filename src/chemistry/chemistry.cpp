@@ -104,6 +104,8 @@ void Chemistry::UpdateChemistry(ODESettings const& ode_settings,
   Real const t_start = pmy_pack->pmesh->time;
   // The timestep
   Real const dt = pmy_pack->pmesh->dt;
+  // Cell sizes
+  auto sizes = pmy_pack->pmb->mb_size;
 
   // ----- Get the unit conversions and constants we'll need -----
   Real const time_cgs = pmy_pack->punit->time_cgs();
@@ -128,7 +130,7 @@ void Chemistry::UpdateChemistry(ODESettings const& ode_settings,
       KOKKOS_LAMBDA(const int& mb_idx, const int& k, const int& j,
                     const int& i) {
         // Create the chemisty object
-        Network_t chem_net(network_settings, mb_idx, k, j, i, w0, ir,
+        Network_t chem_net(network_settings, mb_idx, k, j, i, w0, sizes, ir,
                            density_cgs, mu_H_local, gamma, hydrogen_mass_cgs,
                            time_cgs, energy_density_cgs);
 

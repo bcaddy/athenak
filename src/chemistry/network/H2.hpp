@@ -39,6 +39,7 @@ class H2Network {
   KOKKOS_FUNCTION H2Network(H2Settings const settings, const int mb_idx,
                             const int k, const int j, const int i,
                             const DvceArray5D<Real> w0,
+                            const DualArray1D<RegionSize> sizes,
                             const DvceArray1D<Real> ir, Real const density_cgs,
                             Real const mu_H, Real const gamma,
                             Real const hydrogen_mass_cgs,

@@ -47,6 +47,11 @@ struct GOW17Settings {
   bool H2_rovib_cooling;
   // H2 formation rate on grains
   bool is_kgrH2_const;
+
+  Real velocity_cgs;
+  Real length_cgs;
+  bool three_d;
+  bool multi_d;
 };
 
 /*!
@@ -71,6 +76,7 @@ class GOW17Network {
   KOKKOS_FUNCTION GOW17Network(GOW17Settings const settings, const int mb_idx,
                                const int k, const int j, const int i,
                                const DvceArray5D<Real> w0,
+                               const DualArray1D<RegionSize> sizes,
                                const DvceArray1D<Real> ir,
                                Real const density_cgs, Real const mu_H,
                                Real const gamma, Real const hydrogen_mass_cgs,
@@ -96,7 +102,10 @@ class GOW17Network {
         H2_rovib_cooling(settings.H2_rovib_cooling),
         isothermal_temperature_(settings.isothermal_temperature),
         rad_(ir),
-        is_kgrH2_const(settings.is_kgrH2_const) {}
+        is_kgrH2_const(settings.is_kgrH2_const),
+        gradv_(SetGradv_(mb_idx, k, j, i, w0, sizes, settings.velocity_cgs,
+                         settings.length_cgs, settings.multi_d,
+                         settings.three_d)) {}
 
   // ----- Number of equations -----
   static constexpr int neqs = 13;
@@ -238,6 +247,10 @@ class GOW17Network {
     output.is_kgrH2_const =
         pin->GetOrAddBoolean("chemistry", "is_kgrH2_const", false);
 
+    output.velocity_cgs = ppack->punit->velocity_cgs();
+    output.length_cgs = ppack->punit->length_cgs();
+    output.multi_d = ppack->pmesh->multi_d;
+    output.three_d = ppack->pmesh->three_d;
     return output;
   }
 
@@ -681,7 +694,7 @@ class GOW17Network {
 
   // parameters related to CO cooling
   // these are needed for LVG approximation
-  Real gradv_;  // absolute value of velocity gradient in cgs, >0
+  const Real gradv_;  // absolute value of velocity gradient in cgs, >0
 
   KOKKOS_FUNCTION
   void ComputeGhostSpecies_() {
@@ -1024,49 +1037,43 @@ class GOW17Network {
    * \param i The i index of the cell to work on
    */
   KOKKOS_FUNCTION
-  Real SetGrad_v(const int k, const int j, const int i, ) {
-    AthenaArray<Real>& w = pmy_mb_->phydro->w;
-    const int js = pmy_mb_->js;
-    const int je = pmy_mb_->je;
-    const int ks = pmy_mb_->ks;
-    const int ke = pmy_mb_->ke;
-    Real dvdx, dvdy, dvdz, dvdr_avg, di1, di2;
-    Real dx1, dx2, dy1, dy2, dz1, dz2;
+  Real SetGradv_(const int mb_idx, const int k, const int j, const int i,
+                 const DvceArray5D<Real> w0,
+                 const DualArray1D<RegionSize> sizes, const Real velocity_cgs,
+                 const Real length_cgs, const bool multi_d,
+                 const bool three_d) {
+    // velocity gradient, same as LVG approximation in RADMC-3D when calculating
+    // CO line emission. Note that since we're taking the average of the left
+    // and right slopes and dx is the same for both the velocity in the central
+    // cell cancels out and we can just difference the neighboring cells
 
-    // Real dndx, dndy, dndz, gradn;
-    //  velocity gradient, same as LVG approximation in RADMC-3D when
-    //  calculating CO line emission. vx
-    di1 = w(IVX, k, j, i + 1) - w(IVX, k, j, i);
-    dx1 = (pmy_mb_->pcoord->dx1f(i + 1) + pmy_mb_->pcoord->dx1f(i)) / 2.;
-    di2 = w(IVX, k, j, i) - w(IVX, k, j, i - 1);
-    dx2 = (pmy_mb_->pcoord->dx1f(i) + pmy_mb_->pcoord->dx1f(i - 1)) / 2.;
-    dvdx = (di1 / dx1 + di2 / dx2) / 2.;
+    // vx
+    const Real vp1 = w0(mb_idx, IVX, k, j, i + 1);
+    const Real vm1 = w0(mb_idx, IVX, k, j, i - 1);
+    const Real dx = sizes.d_view(mb_idx).dx1;
+    const Real dvdx = 0.5 * ((vp1 - vm1) / dx);
 
     // vy
-    if (js == 0 && je == 0) {  // one cell in y direction
-      dvdy = 0.;
-    } else {
-      di1 = w(IVY, k, j + 1, i) - w(IVY, k, j, i);
-      dy1 = (pmy_mb_->pcoord->dx2f(j + 1) + pmy_mb_->pcoord->dx2f(j)) / 2.;
-      di2 = w(IVY, k, j, i) - w(IVY, k, j - 1, i);
-      dy2 = (pmy_mb_->pcoord->dx2f(j) + pmy_mb_->pcoord->dx2f(j - 1)) / 2.;
-      dvdy = (di1 / dy1 + di2 / dy2) / 2.;
+    Real dvdy = 0;
+    if (multi_d) {
+      const Real vp1 = w0(mb_idx, IVY, k, j + 1, i);
+      const Real vm1 = w0(mb_idx, IVY, k, j - 1, i);
+      const Real dx = sizes.d_view(mb_idx).dx2;
+      dvdy = 0.5 * ((vp1 - vm1) / dx);
     }
 
     // vz
-    if (ks == 0 && ke == 0) {  // one cell in z direction
-      dvdz = 0.;
-    } else {
-      di1 = w(IVZ, k + 1, j, i) - w(IVZ, k, j, i);
-      dz1 = (pmy_mb_->pcoord->dx3f(k + 1) + pmy_mb_->pcoord->dx3f(k)) / 2.;
-      di2 = w(IVZ, k, j, i) - w(IVZ, k - 1, j, i);
-      dz2 = (pmy_mb_->pcoord->dx3f(k) + pmy_mb_->pcoord->dx3f(k - 1)) / 2.;
-      dvdz = (di1 / dz1 + di2 / dz2) / 2.;
+    Real dvdz = 0;
+    if (three_d) {
+      const Real vp1 = w0(mb_idx, IVZ, k + 1, j, i);
+      const Real vm1 = w0(mb_idx, IVZ, k - 1, j, i);
+      const Real dx = sizes.d_view(mb_idx).dx3;
+      dvdz = 0.5 * ((vp1 - vm1) / dx);
     }
-    dvdr_avg = (Kokkos::abs(dvdx) + Kokkos::abs(dvdy) + Kokkos::abs(dvdz)) / 3.;
+    const Real dvdr_avg =
+        (Kokkos::abs(dvdx) + Kokkos::abs(dvdy) + Kokkos::abs(dvdz)) / 3.;
     // return gradv_, in cgs.
-    return dvdr_avg * pmy_mb_->pmy_mesh->punit->code_velocity_cgs /
-           pmy_mb_->pmy_mesh->punit->code_length_cgs;
+    return dvdr_avg * velocity_cgs / length_cgs;
   }
 };  // class GOW17Network
 };  // namespace chemistry
