@@ -70,13 +70,13 @@ class GOW17Network {
  public:
   KOKKOS_FUNCTION GOW17Network(GOW17Settings const settings, const int mb_idx,
                                const int k, const int j, const int i,
-                               DvceArray5D<Real> w0, DvceArray1D<Real> ir,
+                               const DvceArray5D<Real> w0,
+                               const DvceArray1D<Real> ir,
                                Real const density_cgs, Real const mu_H,
                                Real const gamma, Real const hydrogen_mass_cgs,
                                Real const units_time_cgs,
                                Real const units_energy_density_cgs)
-      : w0_(w0),
-        n_H(w0(mb_idx, IDN, k, j, i) * density_cgs /
+      : n_H(w0(mb_idx, IDN, k, j, i) * density_cgs /
             (mu_H * hydrogen_mass_cgs)),
         gamma(gamma),
         units_time_cgs(units_time_cgs),
@@ -528,9 +528,6 @@ class GOW17Network {
   }
 
  private:
-  /// The primitive grid
-  const DvceArray5D<Real> w0_;
-
   /// The temperature to use for an isothermal EOS
   const Real isothermal_temperature_;
   // ----- Photo Reactions -----
@@ -1016,6 +1013,60 @@ class GOW17Network {
             (1 + 0.4 * Kokkos::sqrt(T2) + 0.2 * T2 + 0.08 * T2 * T2);
     }
     return kgr;
+  }
+
+  //----------------------------------------------------------------------------------------
+  /*!
+   * \brief set gradients of v and nH for CO cooling
+   *
+   * \param k The k index of the cell to work on
+   * \param j The j index of the cell to work on
+   * \param i The i index of the cell to work on
+   */
+  KOKKOS_FUNCTION
+  Real SetGrad_v(const int k, const int j, const int i, ) {
+    AthenaArray<Real>& w = pmy_mb_->phydro->w;
+    const int js = pmy_mb_->js;
+    const int je = pmy_mb_->je;
+    const int ks = pmy_mb_->ks;
+    const int ke = pmy_mb_->ke;
+    Real dvdx, dvdy, dvdz, dvdr_avg, di1, di2;
+    Real dx1, dx2, dy1, dy2, dz1, dz2;
+
+    // Real dndx, dndy, dndz, gradn;
+    //  velocity gradient, same as LVG approximation in RADMC-3D when
+    //  calculating CO line emission. vx
+    di1 = w(IVX, k, j, i + 1) - w(IVX, k, j, i);
+    dx1 = (pmy_mb_->pcoord->dx1f(i + 1) + pmy_mb_->pcoord->dx1f(i)) / 2.;
+    di2 = w(IVX, k, j, i) - w(IVX, k, j, i - 1);
+    dx2 = (pmy_mb_->pcoord->dx1f(i) + pmy_mb_->pcoord->dx1f(i - 1)) / 2.;
+    dvdx = (di1 / dx1 + di2 / dx2) / 2.;
+
+    // vy
+    if (js == 0 && je == 0) {  // one cell in y direction
+      dvdy = 0.;
+    } else {
+      di1 = w(IVY, k, j + 1, i) - w(IVY, k, j, i);
+      dy1 = (pmy_mb_->pcoord->dx2f(j + 1) + pmy_mb_->pcoord->dx2f(j)) / 2.;
+      di2 = w(IVY, k, j, i) - w(IVY, k, j - 1, i);
+      dy2 = (pmy_mb_->pcoord->dx2f(j) + pmy_mb_->pcoord->dx2f(j - 1)) / 2.;
+      dvdy = (di1 / dy1 + di2 / dy2) / 2.;
+    }
+
+    // vz
+    if (ks == 0 && ke == 0) {  // one cell in z direction
+      dvdz = 0.;
+    } else {
+      di1 = w(IVZ, k + 1, j, i) - w(IVZ, k, j, i);
+      dz1 = (pmy_mb_->pcoord->dx3f(k + 1) + pmy_mb_->pcoord->dx3f(k)) / 2.;
+      di2 = w(IVZ, k, j, i) - w(IVZ, k - 1, j, i);
+      dz2 = (pmy_mb_->pcoord->dx3f(k) + pmy_mb_->pcoord->dx3f(k - 1)) / 2.;
+      dvdz = (di1 / dz1 + di2 / dz2) / 2.;
+    }
+    dvdr_avg = (Kokkos::abs(dvdx) + Kokkos::abs(dvdy) + Kokkos::abs(dvdz)) / 3.;
+    // return gradv_, in cgs.
+    return dvdr_avg * pmy_mb_->pmy_mesh->punit->code_velocity_cgs /
+           pmy_mb_->pmy_mesh->punit->code_length_cgs;
   }
 };  // class GOW17Network
 };  // namespace chemistry

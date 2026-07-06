@@ -38,9 +38,10 @@ class H2Network {
  public:
   KOKKOS_FUNCTION H2Network(H2Settings const settings, const int mb_idx,
                             const int k, const int j, const int i,
-                            DvceArray5D<Real> w0, DvceArray1D<Real> ir,
-                            Real const density_cgs, Real const mu_H,
-                            Real const gamma, Real const hydrogen_mass_cgs,
+                            const DvceArray5D<Real> w0,
+                            const DvceArray1D<Real> ir, Real const density_cgs,
+                            Real const mu_H, Real const gamma,
+                            Real const hydrogen_mass_cgs,
                             Real const units_time_cgs,
                             Real const units_energy_density_cgs)
       : n_H(w0(mb_idx, IDN, k, j, i) * density_cgs /
