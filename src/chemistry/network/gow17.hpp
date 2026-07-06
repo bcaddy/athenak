@@ -401,7 +401,12 @@ class GOW17Network {
 
     UpdateRates_();
 
-// cosmic ray reactions
+    // cosmic ray reactions
+    /// reactant indices
+    constexpr int incr_[n_cr_] = {IH2, IHe_g, IH_g, IC_g, ICO, ICO, ISi_g};
+    /// product indices
+    constexpr int outcr_[n_cr_] = {IH2_plus, IHE_plus,  IH_plus, IC_plus,
+                                   IO_g,     IHCO_plus, ISi_plus};
 #pragma unroll
     for (int i = 0; i < n_cr_; i++) {
       const Real rate = kcr_[i] * y[incr_[i]];
@@ -581,11 +586,6 @@ class GOW17Network {
   static constexpr int n_cr_ = 7;
   /// rates for cosmic-ray reactions  in s^-1
   RegisterArray<Real, n_cr_> kcr_;
-  /// reactant index
-  static constexpr int incr_[n_cr_] = {IH2, IHe_g, IH_g, IC_g, ICO, ICO, ISi_g};
-  /// product index
-  static constexpr int outcr_[n_cr_] = {IH2_plus, IHE_plus,  IH_plus, IC_plus,
-                                        IO_g,     IHCO_plus, ISi_plus};
 
   // clang-format off
   // 2 body reactions
