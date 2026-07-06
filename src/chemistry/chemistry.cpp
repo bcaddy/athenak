@@ -128,7 +128,7 @@ void Chemistry::UpdateChemistry(ODESettings const& ode_settings,
       KOKKOS_LAMBDA(const int& mb_idx, const int& k, const int& j,
                     const int& i) {
         // Create the chemisty object
-        Network_t chem_net(network_settings, w0(mb_idx, IDN, k, j, i), ir,
+        Network_t chem_net(network_settings, mb_idx, k, j, i, w0, ir,
                            density_cgs, mu_H_local, gamma, hydrogen_mass_cgs,
                            time_cgs, energy_density_cgs);
 

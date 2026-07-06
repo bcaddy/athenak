@@ -68,13 +68,15 @@ struct GOW17Settings {
  */
 class GOW17Network {
  public:
-  KOKKOS_FUNCTION GOW17Network(GOW17Settings const settings, Real const density,
-                               DvceArray1D<Real> ir, Real const density_cgs,
-                               Real const mu_H, Real const gamma,
-                               Real const hydrogen_mass_cgs,
+  KOKKOS_FUNCTION GOW17Network(GOW17Settings const settings, const int mb_idx,
+                               const int k, const int j, const int i,
+                               DvceArray5D<Real> w0, DvceArray1D<Real> ir,
+                               Real const density_cgs, Real const mu_H,
+                               Real const gamma, Real const hydrogen_mass_cgs,
                                Real const units_time_cgs,
                                Real const units_energy_density_cgs)
-      : n_H(density * density_cgs / (mu_H * hydrogen_mass_cgs)),
+      : n_H(w0(mb_idx, IDN, k, j, i) * density_cgs /
+            (mu_H * hydrogen_mass_cgs)),
         gamma(gamma),
         units_time_cgs(units_time_cgs),
         units_energy_density_cgs(units_energy_density_cgs),
