@@ -132,13 +132,13 @@ class GOW17Network {
     IH2_plus,   // H2+
     IO_plus,    // O+
     ISi_plus,   // Si+
-    IIE,        // internal energy, must be last
     ISi_g,      // Si, ghost species
     IC_g,       // C, ghost species
     IO_g,       // O, ghost species
     IHe_g,      // He, ghost species
     Ie_g,       // e, ghost species
     IH_g,       // H, ghost species
+    IIE,        // internal energy, must be last
   };
 
   // ----- Names, used for output, must be the same order as the enum -----
@@ -401,12 +401,13 @@ class GOW17Network {
    * arrays.
    */
   KOKKOS_FUNCTION
-  CDRates_t<neqs> CDRates() {
-    // todo: | this should be of size neqs-1 but to keep the indexing consistent
-    // todo: | with internal energy being between the real and ghost species I'm
-    // todo: | making it larger to match for now. In the future I'll fix it by
-    // todo: | moving internal energy to the end after the ghost species
-    CDRates_t<neqs> rates;
+  CDRates_t<neqs - 1> CDRates() {
+    // Create and zero out rate arrays
+    CDRates_t<neqs - 1> rates;
+    for (size_t i = 0; i < rates.creation.size; i++) {
+      rates.creation(i) = 0.0;
+      rates.destruction(i) = 0.0;
+    }
 
     // Verify abundances are positive, finite, and not NaN valued
     for (size_t i = 0; i < y.size; i++) {
@@ -430,8 +431,8 @@ class GOW17Network {
 #pragma unroll
     for (int i = 0; i < n_cr_; i++) {
       const Real rate = kcr_[i] * y[incr_[i]];
-      f[incr_[i]] -= rate;
-      f[outcr_[i]] += rate;
+      rates.destruction[incr_[i]] += rate;
+      rates.creation[outcr_[i]] += rate;
     }
 
     // 2body reactions
@@ -461,10 +462,10 @@ class GOW17Network {
       if (y[in2body1_[i]] < 0 && y[in2body2_[i]] < 0) {
         rate *= -1.;
       }
-      f[in2body1_[i]] -= rate;
-      f[in2body2_[i]] -= rate;
-      f[out2body1_[i]] += rate;
-      f[out2body2_[i]] += rate;
+      rates.destruction[in2body1_[i]] += rate;
+      rates.destruction[in2body2_[i]] += rate;
+      rates.creation[out2body1_[i]] += rate;
+      rates.creation[out2body2_[i]] += rate;
     }
 
     // photo reactions
@@ -473,8 +474,8 @@ class GOW17Network {
                                        IO_g,    IH_g, ISi_plus};
     for (int i = 0; i < n_ph_; i++) {
       const Real rate = kph_[i] * y[inph_[i]];
-      f[inph_[i]] -= rate;
-      f[outph1_[i]] += rate;
+      rates.destruction[inph_[i]] += rate;
+      rates.creation[outph1_[i]] += rate;
     }
 
     // grain assisted reactions
@@ -483,19 +484,8 @@ class GOW17Network {
     constexpr size_t outgr_[n_gr_] = {IH2, IH_g, IC_g, IHe_g, ISi_g};
     for (int i = 0; i < n_gr_; i++) {
       const Real rate = kgr_[i] * y[ingr_[i]];
-      f[ingr_[i]] -= rate;
-      f[outgr_[i]] += rate;
-    }
-
-    // Verify abundances are positive, finite, and not NaN valued
-    for (size_t i = 0; i < f.size; i++) {
-      // Verify positivity
-      f[i] = Kokkos::fmax(f[i], 0.0);
-
-      // Check if inf or NaN valued and throw abort if that's the case
-      if (Kokkos::isinf(f[i]) || Kokkos::isnan(f[i])) {
-        Kokkos::abort("Error: NaN or Inf value found in GOW17 `f` array\n");
-      }
+      rates.destruction[ingr_[i]] += rate;
+      rates.creation[outgr_[i]] += rate;
     }
 
     // convert to code units
@@ -540,7 +530,17 @@ class GOW17Network {
 
     // Compute the changes
     for (size_t i = 0; i < neqs - 1; i++) {
-      f(i) = rates.creation(i) - y(i) * rates.destruction(i);
+      // todo: revert this back to the version with y(i) later???
+      // f(i) = rates.creation(i) - y(i) * rates.destruction(i);
+      f(i) = rates.creation(i) - rates.destruction(i);
+    }
+
+    // Verify abundances are finite and not NaN valued
+    for (size_t i = 0; i < f.size; i++) {
+      // Check if inf or NaN valued and throw abort if that's the case
+      if (Kokkos::isinf(f[i]) || Kokkos::isnan(f[i])) {
+        Kokkos::abort("Error: NaN or Inf value found in GOW17 `f` array\n");
+      }
     }
   }
 
