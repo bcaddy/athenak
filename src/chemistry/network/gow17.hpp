@@ -401,8 +401,12 @@ class GOW17Network {
    * arrays.
    */
   KOKKOS_FUNCTION
-  CDRates_t<neqs - 1> CDRates() {
-    CDRates_t<neqs - 1> rates;
+  CDRates_t<neqs> CDRates() {
+    // todo: | this should be of size neqs-1 but to keep the indexing consistent
+    // todo: | with internal energy being between the real and ghost species I'm
+    // todo: | making it larger to match for now. In the future I'll fix it by
+    // todo: | moving internal energy to the end after the ghost species
+    CDRates_t<neqs> rates;
 
     // Verify abundances are positive, finite, and not NaN valued
     for (size_t i = 0; i < y.size; i++) {
