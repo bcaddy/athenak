@@ -287,7 +287,7 @@ class GOW17Network {
   Real CoolingTerm(Real T) {
     // Check that the temperature is below the maximum allowed for neutral
     // medium. If above then set it to T_max_NM
-    T = (T > temperature_max_cooling_nm) ? temperature_max_cooling_nm : T;
+    T = Kokkos::fmin(T, temperature_max_cooling_nm);
 
     // cut-off cooling at low temperature
     if (T < temperature_min_cooling) {

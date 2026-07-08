@@ -35,9 +35,12 @@ class Thermo {
    */
   KOKKOS_FUNCTION static Real CvCold(const Real xH2, const Real xHe_total,
                                      const Real xe, const Real gamma) {
-    const Real xH20 = (xH2 > 0.5) ? 0.5 : xH2;
+    // floor abundances and 0 to avoid mathematical issues with sqrt and log
+    // later
+    const Real xH20 = Kokkos::fmin(Kokkos::fmax(xH2, 0.0), 0.5);
     return units::Units::k_boltzmann_cgs *
-           ((1. - 2. * xH20) + xH20 + xHe_total + xe) / (gamma - 1.0);
+           ((1. - 2. * xH20) + xH20 + xHe_total + Kokkos::fmax(xe, 0.0)) /
+           (gamma - 1.0);
   }
 
   //-------------------------------------------------------------------------------------
@@ -388,7 +391,7 @@ class Thermo {
     // TODO(Gong): potentially can use despotic to generate a more accurate
     // value for interpolation, might be faster too
     const Real Tmax_CO = 2000.;  // maximum temperature above which use Tmax
-    T = (T < Tmax_CO) ? T : Tmax_CO;
+    T = Kokkos::fmin(T, Tmax_CO);
 
     // factor to make the cooling rate goes to zero at T=0.
     const Real facT = Kokkos::pow(1. - Kokkos::exp(-T), 1.0e3);
