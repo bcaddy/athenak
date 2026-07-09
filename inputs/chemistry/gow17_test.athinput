@@ -63,6 +63,15 @@ ode_solver = forward_euler # ODE solver to be used
 pgen_name   = GOW17_uniform # problem generator name
 n_H         = 100           # initial density, in units of number density of hydrogen atoms
 vx_kms      = 0.0           # initial x-velocity, in km/s
+
+init_default = 0.1 
+
+xHe        = 0.1          # He per H, default = 0.1
+xC         = 1.6e-4       # C atom per H, this is Z=1 value, default 1.6e-4
+xO         = 3.2e-4       # O atom per H, this is Z=1 value, default 3.2e-4
+xS         = 3.5e-6       # S atom per H, this is Z=1 value, default 3.5e-6
+xSi        = 1.7e-6       # Si atom per H, this is Z=1 value, default 1.7e-6
+
 init_He+    = 0.0
 init_OHx    = 0.0
 init_CHx    = 0.0

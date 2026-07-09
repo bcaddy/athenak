@@ -54,6 +54,7 @@ void ProblemGenerator::GOW17Uniform(ParameterInput* pin, const bool restart) {
   hydro.e = hydro.d * SQR(iso_cs) / (pmbp->phydro->peos->eos_data.gamma - 1.0);
 
   // Chemistry values
+  const Real init_default = pin->GetOrAddReal("problem", "init_default", 0.0);
   DualArray1D<Real> initial_chemistry("initial_chemistry",
                                       chemistry::GOW17Network::neqs - 1);
   for (size_t i = 0; i < chemistry::GOW17Network::neqs - 1; i++) {
@@ -62,7 +63,7 @@ void ProblemGenerator::GOW17Uniform(ParameterInput* pin, const bool restart) {
     const auto init_name = std::string("init_") + std::string(name);
 
     // Get the value and save it
-    const Real val = pin->GetReal("problem", init_name);
+    const Real val = pin->GetOrAddReal("problem", init_name, init_default);
     initial_chemistry.view_host()(i) = val * n_H;
   }
 
