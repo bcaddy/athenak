@@ -132,6 +132,7 @@ add_executable(
         pgen/tests/z4c_linear_wave.cpp
         pgen/chemistry/H2_advection.cpp
         pgen/chemistry/H2_uniform.cpp
+        pgen/chemistry/GOW17_uniform.cpp
 
         radiation/radiation.cpp
         radiation/radiation_fluxes.cpp

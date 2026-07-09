@@ -1,11 +1,11 @@
-# AthenaXXX input file for the chemistry test with the H2 network and uniform abundance
+# AthenaXXX input file for the chemistry test with the GOW17 network and uniform abundance
 
 <comment>
-problem   = H-H2 chemistry with analytic solution. Flat profile in H abundance
+problem   = GOW17 chemistry test case
 reference = Section 4.1 in Gong et al. 2023, arXiv:2305.04965
 
 <job>
-basename  = H2_uniform # problem ID: basename of output filenames
+basename  = GOW17_uniform # problem ID: basename of output filenames
 
 <mesh>
 nghost    = 2         # Number of ghost cells
@@ -58,14 +58,23 @@ mu          = 1.27                    # mean molecular weight
 <chemistry>
 network    = GOW17         # Chemistry network to be used
 ode_solver = forward_euler # ODE solver to be used
-h2_constant_cv = true
 
 <problem>
-pgen_name   = H2_uniform   # problem generator name
-n_H         = 100          # initial density, in units of number density of hydrogen atoms
-vx_kms      = 0.0          # initial x-velocity, in km/s
-init_H    = 1.0          # initial abundance
-init_H2   = 0.0
+pgen_name   = GOW17_uniform # problem generator name
+n_H         = 100           # initial density, in units of number density of hydrogen atoms
+vx_kms      = 0.0           # initial x-velocity, in km/s
+init_He+    = 0.0
+init_OHx    = 0.0
+init_CHx    = 0.0
+init_CO     = 0.0
+init_C+     = 0.0
+init_HCO+   = 0.0
+init_H2     = 0.0
+init_H+     = 0.0
+init_H3+    = 0.0
+init_H2+    = 0.0
+init_O+     = 0.0
+init_Si+    = 0.0
 
 <output1>
 file_type   = tab       # Tabular data dump
