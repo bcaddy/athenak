@@ -10,19 +10,20 @@
 
 #include "athena.hpp"
 #include "bvals/bvals.hpp"
+#include "chemistry/network/chemistry_networks.hpp"
 
 namespace chemistry {
 class Radiation {
  public:
   Radiation(MeshBlockPack* ppack, ParameterInput* pin) {
     // Get parameters
-    int nfreq = pin->GetOrAddInteger("chemistry", "radiation_n_frequency", 1);
     const Real G0 = pin->GetOrAddReal("chemistry", "radiation_G0", 1e-6);
     const Real cr_rate = pin->GetOrAddReal("chemistry", "radiation_CR", 2e-16);
 
     // Assign values in host array
-    HostArray1D<Real> ir_host("chemistry_ir_host", nfreq);
-    for (size_t i = 0; i < ir_host.size() - 1; i++) {
+    HostArray1D<Real> ir_host("chemistry_ir_host",
+                              chemistry::GOW17Network::n_freq);
+    for (size_t i = 0; i < ir_host.size(); i++) {
       ir_host(i) = G0;
     }
     ir_host(ir_host.size() - 1) = cr_rate;

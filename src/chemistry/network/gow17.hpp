@@ -187,6 +187,10 @@ class GOW17Network {
   // H2 formation rate on grains
   const bool is_kgrH2_const;
 
+  // ----- Radiation Constants -----
+  static constexpr int n_ph = 6;
+  static constexpr int n_freq = n_ph + 2;
+
   // ----- Member Functions -----
   /*!
    * \brief Get the settings for the GOW17 network from the input file
@@ -469,10 +473,10 @@ class GOW17Network {
     }
 
     // photo reactions
-    constexpr size_t inph_[n_ph_] = {IC_g, ICHx, ICO, IOHx, IH2, ISi_g};
-    constexpr size_t outph1_[n_ph_] = {IC_plus, IC_g, IC_g,
-                                       IO_g,    IH_g, ISi_plus};
-    for (int i = 0; i < n_ph_; i++) {
+    constexpr size_t inph_[n_ph] = {IC_g, ICHx, ICO, IOHx, IH2, ISi_g};
+    constexpr size_t outph1_[n_ph] = {IC_plus, IC_g, IC_g,
+                                      IO_g,    IH_g, ISi_plus};
+    for (int i = 0; i < n_ph; i++) {
       const Real rate = kph_[i] * y[inph_[i]];
       rates.destruction[inph_[i]] += rate;
       rates.creation[outph1_[i]] += rate;
@@ -562,18 +566,14 @@ class GOW17Network {
   /// Reaction Rate enum
   enum : size_t { iph_C, iph_CHx, iph_CO, iph_OHx, iph_H2, iph_Si };
 
-  // Constants
-  static constexpr int n_ph_ = 6;
-  static constexpr int n_freq_ = n_ph_ + 2;
-
   /// radiation field intensity
-  // RegisterArray<Real, n_freq_> rad_;
+  // RegisterArray<Real, n_freq> rad_;
   DvceArray1D<Real> rad_;
   /// enum for indexing into the rad_ array
-  enum : size_t { irad_GPE = n_ph_, irad_CR };
+  enum : size_t { irad_GPE = n_ph, irad_CR };
 
   /// rates for photo-reactions in s^-1
-  RegisterArray<Real, n_ph_> kph_;
+  RegisterArray<Real, n_ph> kph_;
 
   // ----- Grain Reactions -----
   // Grain assisted recombination of H, H2, C+ and H+
@@ -908,10 +908,10 @@ class GOW17Network {
     }
 
     // photo reactions
-    constexpr Real kph_base_[n_ph_] = {3.5e-10, 9.1e-10, 2.4e-10,
-                                       3.8e-10, 5.7e-11, 4.5e-9};
+    constexpr Real kph_base_[n_ph] = {3.5e-10, 9.1e-10, 2.4e-10,
+                                      3.8e-10, 5.7e-11, 4.5e-9};
 #pragma unroll
-    for (int i = 0; i < n_ph_; i++) {
+    for (int i = 0; i < n_ph; i++) {
       kph_[i] = kph_base_[i] * rad_[i];
     }
 
