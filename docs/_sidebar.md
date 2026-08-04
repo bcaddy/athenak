@@ -2,63 +2,63 @@
 
 **Getting Started**
 
-[Requirements](https://github.com/IAS-Astrophysics/athenak/wikis/Requirements)
+[Requirements](Requirements)
 
-[Download](https://github.com/IAS-Astrophysics/athenak/wikis/Download)
+[Download](Download)
 
-[Build](https://github.com/IAS-Astrophysics/athenak/wikis/Build)
+[Build](Build)
 
 **Running**
 
-[Running AthenaK](https://github.com/IAS-Astrophysics/athenak/wikis/Running-the-Code)
+[Running AthenaK](Running-the-Code)
 
-[Input File](https://github.com/IAS-Astrophysics/athenak/wikis/The-Input-File)
+[Input File](The-Input-File)
 
-[Outputs](https://github.com/IAS-Astrophysics/athenak/wikis/Outputs)
+[Outputs](Outputs)
 
-[Analysis](https://github.com/IAS-Astrophysics/athenak/wikis/Analysis)
+[Analysis](Analysis)
 
-[Notes for Specific Machines](https://github.com/IAS-Astrophysics/athenak/wikis/Notes-for-Specific-Machines)
+[Notes for Specific Machines](Notes-for-Specific-Machines)
 
 **User Guide**
 
-[Problem Generators](https://github.com/IAS-Astrophysics/athenak/wikis/ProblemGenerators)
+[Problem Generators](ProblemGenerators)
 
-[Static Mesh Refinement](https://github.com/IAS-Astrophysics/athenak/wikis/Static-Mesh-Refinement)
+[Static Mesh Refinement](Static-Mesh-Refinement)
 
-[Adaptive Mesh Refinement](https://github.com/IAS-Astrophysics/athenak/wikis/Adaptive-Mesh-Refinement)
+[Adaptive Mesh Refinement](Adaptive-Mesh-Refinement)
 
 Physics Modules
 
-* [Hydrodynamics & MHD](https://github.com/IAS-Astrophysics/athenak/wikis/Hydro-MHD)
+* [Hydrodynamics & MHD](Hydro-MHD)
 
-* [Ion-Neutral Fluids](https://github.com/IAS-Astrophysics/athenak/wikis/Ion-Neutral)
+* [Ion-Neutral Fluids](Ion-Neutral)
 
-* [Explicit Dissipation](https://github.com/IAS-Astrophysics/athenak/wikis/Diffusion-Processes)
+* [Explicit Dissipation](Diffusion-Processes)
 
-* [Source Terms](https://github.com/IAS-Astrophysics/athenak/wikis/SourceTerms)
+* [Source Terms](SourceTerms)
 
-* [Radiation](https://github.com/IAS-Astrophysics/athenak/wikis/Radiation)
+* [Radiation](Radiation)
 
-* [Numerical Relativity](https://github.com/IAS-Astrophysics/athenak/wikis/Numerical-Relativity)
+* [Numerical Relativity](Numerical-Relativity)
 
-* [GRMHD in Dynamical Spacetimes](https://github.com/IAS-Astrophysics/athenak/wiki/GRMHD-in-Dynamical-Spacetimes)
-  * [Equations of State](https://github.com/IAS-Astrophysics/athenak/wiki/DynGRMHD-Equations-of-State)
+* [GRMHD in Dynamical Spacetimes](GRMHD-in-Dynamical-Spacetimes)
+  * [Equations of State](DynGRMHD-Equations-of-State)
 
-* [Particles](https://github.com/IAS-Astrophysics/athenak/wiki/Particles)
+* [Particles](Particles)
 
-* [Chemistry](https://github.com/IAS-Astrophysics/athenak/wiki/Chemistry)
+* [Chemistry](Chemistry)
 
-[Frequently Asked Questions](https://github.com/IAS-Astrophysics/athenak/wiki/Frequently-Asked-Questions)
+[Frequently Asked Questions](Frequently-Asked-Questions)
 
 Other Features
 
-[ODE Solvers](https://github.com/IAS-Astrophysics/athenak/wiki/ODE-Solvers)
+[ODE Solvers](ODE-Solvers)
 
-[Shearing Box](https://github.com/IAS-Astrophysics/athenak/wikis/ShearingBox)
+[Shearing Box](ShearingBox)
 
-[Units](https://github.com/IAS-Astrophysics/athenak/wikis/Units)
+[Units](Units)
 
-[Automatic Testing](https://github.com/IAS-Astrophysics/athenak/wikis/AutoTest)
+[Automatic Testing](AutoTest)
 
-[Tutorial](https://github.com/IAS-Astrophysics/athenak/wikis/Tutorial)
+[Tutorial](Tutorial)
