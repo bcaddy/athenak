@@ -15,7 +15,16 @@
 
 namespace ode_solvers {
 
-struct KokkosBDFSettings {};
+struct KokkosBDFSettings {
+  /// Fraction of the integration interval (the hydro timestep) to use for the
+  /// solver's first internal step, i.e. dt0 = first_step_frac * dt. A value of
+  /// 0 (the default) gives dt0 = 0, which lets the Kokkos Kernels BDF driver
+  /// auto-select its first step. This is an opt-in escape hatch: a fixed
+  /// fraction is a poor global control because it is too small in the easy
+  /// (near-equilibrium) regime, needlessly slowing every step, yet still too
+  /// large to cure the ill-conditioned first-cycle solve for stiff networks.
+  Real first_step_frac;
+};
 
 /*!
  * \brief Solve a system of ODEs using the BDF solver from Kokkos Kernels
@@ -33,6 +42,7 @@ class KokkosBDF {
         t_start(t_start),
         dt(dt),
         t_end(t_start + dt),
+        dt0(settings.first_step_frac * dt),
         max_step(dt),
         temp_(&temp_buffer_[0][0], ode_t::neqs, 23 + 2 * ode_t::neqs + 4),
         temp2_(&temp2_buffer_[0][0], 6, 7) {}
@@ -49,7 +59,7 @@ class KokkosBDF {
   /// Time to integrate to
   const Real t_end;
   /// First time step size, if zero then the solver will decide
-  const Real dt0 = 0.0;
+  const Real dt0;
   /// The maximum time step, as of Kokkos Kernels 4.4 this is not implemented so
   /// it does nothing
   const Real max_step;
@@ -64,7 +74,11 @@ class KokkosBDF {
    */
   static KokkosBDFSettings GetSettings(ParameterInput* pin,
                                        std::string module) {
-    return KokkosBDFSettings();
+    // Default 0 => dt0 = 0 => the solver auto-selects its first step. A fixed
+    // fraction of the macro-step is a poor global control (too small in the
+    // easy regime, too large in the stiff first cycle), so it is opt-in only.
+    return KokkosBDFSettings{
+        pin->GetOrAddReal(module, "kokkos_BDF_first_step_frac", 0.0)};
   }
 
   KOKKOS_FUNCTION
