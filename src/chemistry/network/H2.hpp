@@ -38,12 +38,17 @@ struct H2Settings {
  */
 class H2Network {
  public:
-  KOKKOS_FUNCTION H2Network(H2Settings const settings, Real const density,
-                            Real const density_cgs, Real const mu_H,
-                            Real const gamma, Real const hydrogen_mass_cgs,
+  KOKKOS_FUNCTION H2Network(H2Settings const settings, const int mb_idx,
+                            const int k, const int j, const int i,
+                            const DvceArray5D<Real> w0,
+                            const DualArray1D<RegionSize> sizes,
+                            const DvceArray1D<Real> ir, Real const density_cgs,
+                            Real const mu_H, Real const gamma,
+                            Real const hydrogen_mass_cgs,
                             Real const units_time_cgs,
                             Real const units_energy_density_cgs)
-      : n_H(density * density_cgs / (mu_H * hydrogen_mass_cgs)),
+      : n_H(w0(mb_idx, IDN, k, j, i) * density_cgs /
+            (mu_H * hydrogen_mass_cgs)),
         gamma(gamma),
         units_time_cgs(units_time_cgs),
         units_energy_density_cgs(units_energy_density_cgs),
@@ -99,7 +104,7 @@ class H2Network {
    * \param pin The ParameterInput object
    * \return H2Settings The settings for the H2 network
    */
-  static H2Settings GetSettings(ParameterInput* pin) {
+  static H2Settings GetSettings(ParameterInput* pin, MeshBlockPack* ppack) {
     return H2Settings{
         pin->GetOrAddBoolean("chemistry", "h2_constant_cv", false),
         pin->GetOrAddBoolean("chemistry", "h2_isothermal", false)};
@@ -108,17 +113,18 @@ class H2Network {
   /*!
    * \brief Compute the temperature in the cell
    *
+   * \param y_in The current state to compute the temperature from
    * \return Real The temperature in the cell
    */
-  KOKKOS_FUNCTION
-  Real Temperature() const {
+  template <class vec_type>
+  KOKKOS_FUNCTION Real Temperature(const vec_type& y_in) const {
     // Constants needed for computing temperature
     static constexpr Real x_He = 0.1;
     static constexpr Real x_e = 0.0;
-    const Real x_H2 = (const_cv) ? 0.0 : y(IH2);
+    const Real x_H2 = (const_cv) ? 0.0 : y_in(IH2);
 
     // energy per hydrogen atom
-    const Real E_ergs = y(IIE) * units_energy_density_cgs / n_H;
+    const Real E_ergs = y_in(IIE) * units_energy_density_cgs / n_H;
 
     // Temperature
     return E_ergs / Thermo::CvCold(x_H2, x_He, x_e, gamma);
@@ -152,15 +158,16 @@ class H2Network {
   /*!
    * \brief Evaluate the internal energy equation
    *
+   * \param y_in The current state to evaluate the internal energy equation from
    * \return Real The result of evaluating the internal energy equation
    */
-  KOKKOS_FUNCTION
-  Real Edot() const {
+  template <class vec_type>
+  KOKKOS_FUNCTION Real Edot(const vec_type& y_in) const {
     if (isothermal) {
       return 0.0;
     }
 
-    const Real T = Temperature();
+    const Real T = Temperature(y_in);
 
     static constexpr Real T_floor = 1.0;  // temperature floor for cooling
     if (T < T_floor) {
@@ -176,11 +183,12 @@ class H2Network {
    * \brief Compute the creation and destruction rates. These are used like
    * `f(i) = rate.creation(i) - y(i) * rate.destruction(i);`
    *
+   * \param y_in The current state to compute the rates from
    * \return CDRates_t A struct containing the creation and destruction rate
    * arrays.
    */
-  KOKKOS_FUNCTION
-  CDRates_t<neqs - 1> CDRates() const {
+  template <class vec_type>
+  KOKKOS_FUNCTION CDRates_t<neqs - 1> CDRates(const vec_type& y_in) const {
     CDRates_t<neqs - 1> rates;
 
     // cr = cosmic ray, gr = dust grain
@@ -188,9 +196,9 @@ class H2Network {
     const Real rate_gr = k_gr * n_H;
 
     // H_2 equation
-    rates.creation(IH2) = rate_gr * y(IH);
+    rates.creation(IH2) = rate_gr * y_in(IH);
     // H equation
-    rates.creation(IH) = 2 * rate_cr * y(IH2);
+    rates.creation(IH) = 2 * rate_cr * y_in(IH2);
 
     // H_2 equation
     rates.destruction(IH2) = rate_cr;
@@ -211,14 +219,14 @@ class H2Network {
                                          const vec_type1& y_in,
                                          vec_type2& f) const {
     // ----- Internal energy equation -----
-    f(IIE) = Edot();
+    f(IIE) = Edot(y_in);
 
     // ----- Creation & Destruction Rates -----
-    const auto rates = CDRates();
+    const auto rates = CDRates(y_in);
 
     // Compute the changes
     for (size_t i = 0; i < neqs - 1; i++) {
-      f(i) = rates.creation(i) - y(i) * rates.destruction(i);
+      f(i) = rates.creation(i) - y_in(i) * rates.destruction(i);
     }
   }
 
