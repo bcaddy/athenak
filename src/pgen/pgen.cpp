@@ -955,6 +955,8 @@ void ProblemGenerator::CallProblemGenerator(ParameterInput *pin, bool is_restart
     H2Uniform(pin, is_restart);
   } else if (pgen_fun_name.compare("H2_advection") == 0) {
     H2Advection(pin, is_restart);
+  } else if (pgen_fun_name.compare("GOW17_uniform") == 0) {
+    GOW17Uniform(pin, is_restart);
   } else if (pgen_fun_name.compare("gravity") == 0) {
     SelfGravity(pin, is_restart);
   } else if (pgen_fun_name.compare("binary_gravity") == 0) {
