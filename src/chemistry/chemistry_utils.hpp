@@ -39,33 +39,35 @@ template <class network_t, class vec_type, class mat_type>
 KOKKOS_FUNCTION void numerical_jacobian(const network_t& network, const Real t,
                                         const Real dt, const vec_type& y_in,
                                         const mat_type& jac) {
-  RegisterArray<Real, network.neqs> f0, yp, fp;
-
-  // Set yp to to the unperturbed values
-  for (int n = 0; n < network.neqs; ++n) {
-    yp(n) = y_in(n);
-  }
+  RegisterArray<Real, network.neqs> f0, fp;
 
   // Evaluate the unperturbed f0
   network.evaluate_function(t, dt, y_in, f0);
 
   // The perturbation to add to each element in turn
-  const Real perturbation = Kokkos::sqrt(Kokkos::ArithTraits<Real>::epsilon());
+  const Real perturbation_factor =
+      Kokkos::sqrt(Kokkos::ArithTraits<Real>::epsilon());
 
   for (int j = 0; j < network.neqs; ++j) {
     // Add the perturbation to the jth element
-    yp(j) += perturbation * Kokkos::fmax(Kokkos::abs(y_in(j)), Real(1.0));
+    const Real perturbation =
+        perturbation_factor * Kokkos::fmax(Kokkos::abs(y_in(j)), Real(1.0));
+    const Real y_unperturbed = y_in(j);
+    y_in(j) += perturbation;
 
     // Compute the perturbed values of fp
-    network.evaluate_function(t, dt, yp, fp);
+    network.evaluate_function(t, dt, y_in, fp);
+
+    // realized step, robust to rounding
+    const Real inverse_diff = Real(1.0) / perturbation;
 
     // Update the Jacobian
     for (int k = 0; k < network.neqs; ++k) {
-      jac(k, j) = (fp(k) - f0(k)) / perturbation;
+      jac(k, j) = (fp(k) - f0(k)) * inverse_diff;
     }
 
     // Reset the perturbed field
-    yp(j) = y_in(j);
+    y_in(j) = y_unperturbed;
   }
 }
 }  // namespace chemistry
