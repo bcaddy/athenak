@@ -33,7 +33,8 @@ Chemistry::Chemistry(MeshBlockPack* ppack, ParameterInput* pin)
       nscalars_chemistry(SetupGetNumChemistryScalars(ppack, pin, -1, false)),
       mu_H(pin->GetOrAddReal("chemistry", "mu_H", 1.4)),
       chemistry_scalars_first_idx(ComputeChemistryScalarsStartIndex()),
-      my_pin(pin) {
+      my_pin(pin),
+      pchem_rad(ppack, pin) {
   // Verify that units are enables
   if (!pin->DoesBlockExist("units")) {
     std::cerr
@@ -53,25 +54,6 @@ Chemistry::~Chemistry() {}
 // Member Functions
 // ================
 /*!
- * \brief Selects the proper template of Chemistry::UpdateChemistry to call and
- * passes in the proper arguments
- */
-TaskStatus Chemistry::UpdateChemistryTask(Driver* d, int stage) {
-  const std::string network = my_pin->GetString("chemistry", "network");
-  const std::string ode_solver = my_pin->GetString("chemistry", "ode_solver");
-
-  if (network == "H2") {
-    if (ode_solver == "forward_euler") {
-      UpdateChemistry<ode_solvers::ForwardEuler, H2Network>();
-    } else if (ode_solver == "kokkos_BDF") {
-      UpdateChemistry<ode_solvers::KokkosBDF, H2Network>();
-    }
-  }
-
-  return TaskStatus::complete;
-}
-
-/*!
  * \brief Updates the chemistry scalars and internal energy
  *
  * \tparam ODE_Solver_t The ODE solver to ues
@@ -86,6 +68,8 @@ void Chemistry::UpdateChemistry() {
   Real const t_start = pmy_pack->pmesh->time;
   // The timestep
   Real const dt = pmy_pack->pmesh->dt;
+  // Cell sizes
+  auto sizes = pmy_pack->pmb->mb_size;
 
   // ----- Get the unit conversions and constants we'll need -----
   Real const time_cgs = pmy_pack->punit->time_cgs();
@@ -95,10 +79,13 @@ void Chemistry::UpdateChemistry() {
   Real const gamma = pmy_pack->phydro->peos->eos_data.gamma;
   Real const mu_H_local = mu_H;
 
+  // ----- Get radiation stuff -----
+  const auto ir = pchem_rad.ir;
+
   // ----- Load network and ODE solver settings -----
   auto const ode_settings =
       ODE_Solver_t<Network_t>::GetSettings(my_pin, "chemistry");
-  auto const network_settings = Network_t::GetSettings(my_pin);
+  auto const network_settings = Network_t::GetSettings(my_pin, pmy_pack);
 
   // ----- Get all the loop limits and generate the parallel policy ------
   // NOLINTNEXTLINE(whitespace/braces)
@@ -112,7 +99,7 @@ void Chemistry::UpdateChemistry() {
       KOKKOS_LAMBDA(const int& mb_idx, const int& k, const int& j,
                     const int& i) {
         // Create the chemisty object
-        Network_t chem_net(network_settings, w0(mb_idx, IDN, k, j, i),
+        Network_t chem_net(network_settings, mb_idx, k, j, i, w0, sizes, ir,
                            density_cgs, mu_H_local, gamma, hydrogen_mass_cgs,
                            time_cgs, energy_density_cgs);
 
@@ -148,33 +135,14 @@ void Chemistry::UpdateChemistry() {
       });
 }
 
-/*!
- * \brief Syncs the conserved array to the values in the primitive array.
- * Primarily intended to update the energy since the chemistry solve updates the
- * internal energy.
- */
-TaskStatus Chemistry::PrimToCons(Driver* pdrive, int stage) {
-  auto& indcs = pmy_pack->pmesh->mb_indcs;
-  int& ng = indcs.ng;
-  int n1m1 = indcs.nx1 + 2 * ng - 1;
-  int n2m1 = (indcs.nx2 > 1) ? (indcs.nx2 + 2 * ng - 1) : 0;
-  int n3m1 = (indcs.nx3 > 1) ? (indcs.nx3 + 2 * ng - 1) : 0;
-
-  if (is_hydro_enabled) {
-    auto peos = pmy_pack->phydro->peos;
-    auto u0 = pmy_pack->phydro->u0;
-    auto w0 = pmy_pack->phydro->w0;
-    peos->PrimToCons(w0, u0, 0, n1m1, 0, n2m1, 0, n3m1);
-  } else {  // if (is_mhd_enabled) {
-    auto peos = pmy_pack->pmhd->peos;
-    auto u0 = pmy_pack->pmhd->u0;
-    auto bcc = pmy_pack->pmhd->bcc0;
-    auto w0 = pmy_pack->pmhd->w0;
-    peos->PrimToCons(w0, bcc, u0, 0, n1m1, 0, n2m1, 0, n3m1);
-  }
-
-  return TaskStatus::complete;
-}
+// Instantiate the different versions of UpdateChemistry
+template void
+Chemistry::UpdateChemistry<ode_solvers::ForwardEuler, H2Network>();
+template void Chemistry::UpdateChemistry<ode_solvers::KokkosBDF, H2Network>();
+template void
+Chemistry::UpdateChemistry<ode_solvers::ForwardEuler, GOW17Network>();
+template void
+Chemistry::UpdateChemistry<ode_solvers::KokkosBDF, GOW17Network>();
 
 /*!
  * \brief Return the name of the chemical species at scalar_idx
@@ -193,6 +161,9 @@ std::string Chemistry::GetSpeciesNames(int const& scalar_idx) {
     if (network == "H2") {
       species_names.assign(H2Network::species_names.begin(),
                            H2Network::species_names.end());
+    } else if (network == "GOW17") {
+      species_names.assign(GOW17Network::species_names.begin(),
+                           GOW17Network::species_names.end());
     }
 
     // Create the mapping
@@ -265,45 +236,29 @@ int Chemistry::ComputeChemistryScalarsStartIndex() {
 
 /*!
  * \brief Returns loop limits for the chemistry solver to use with
- * MDRangePolicy. These limits loop over the entire grid, including ghost cells,
- * to avoid having to re-comminicate the updated values of internal energy.
+ * MDRangePolicy.
  *
  * \return std::tuple<Kokkos::Array<int, 4>, Kokkos::Array<int, 4>> The start
  * and end limits in that order
  */
 std::tuple<Kokkos::Array<int, 4>, Kokkos::Array<int, 4>>
 Chemistry::LoopLimitsAllCells() {
-  // This creates loop bounds over the entire grid, including the ghost cells.
-  // This requires extra computation but doesn't require that the ghost cells be
-  // re-communicated or that chemistry be inserted during the last stage of the
-  // integrator before boundary conditions are communicated
+  // Set the start indices
   Kokkos::Array<int, 4> const start = {
-      0,  // meshblock start
-      0,  // k start
-      0,  // j start
-      0   // i start
+      0,                             // meshblock start
+      pmy_pack->pmesh->mb_indcs.ks,  // k start
+      pmy_pack->pmesh->mb_indcs.js,  // j start
+      pmy_pack->pmesh->mb_indcs.is   // i start
   };
 
   // Check if the dimension is active and if it's not set the upper limit to 1
-  const int ke =
-      (pmy_pack->pmesh->mb_indcs.ke == 0)
-          ? 1
-          : pmy_pack->pmesh->mb_indcs.ke + 1 + pmy_pack->pmesh->mb_indcs.ng;
-  const int je =
-      (pmy_pack->pmesh->mb_indcs.je == 0)
-          ? 1
-          : pmy_pack->pmesh->mb_indcs.je + 1 + pmy_pack->pmesh->mb_indcs.ng;
-  const int ie =
-      (pmy_pack->pmesh->mb_indcs.ie == 0)
-          ? 1
-          : pmy_pack->pmesh->mb_indcs.ie + 1 + pmy_pack->pmesh->mb_indcs.ng;
-
   Kokkos::Array<int, 4> const end = {
-      pmy_pack->nmb_thispack,  // meshblock end
-      ke,                      // k end
-      je,                      // j end
-      ie                       // i end
+      pmy_pack->nmb_thispack,            // meshblock end
+      pmy_pack->pmesh->mb_indcs.ke + 1,  // k end
+      pmy_pack->pmesh->mb_indcs.je + 1,  // j end
+      pmy_pack->pmesh->mb_indcs.ie + 1   // i end
   };
+
   return {start, end};
 }
 
