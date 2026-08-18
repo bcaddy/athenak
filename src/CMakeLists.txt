@@ -141,6 +141,7 @@ add_executable(
         pgen/tests/z4c_linear_wave.cpp
         pgen/chemistry/H2_advection.cpp
         pgen/chemistry/H2_uniform.cpp
+        pgen/chemistry/GOW17_uniform.cpp
         pgen/tests/jeans_wave.cpp
         pgen/tests/binary_gravity.cpp
         pgen/tests/be_collapse.cpp
