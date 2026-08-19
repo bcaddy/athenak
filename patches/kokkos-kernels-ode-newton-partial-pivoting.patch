@@ -1,0 +1,76 @@
+diff --git a/ode/impl/KokkosODE_BDF_impl.hpp b/ode/impl/KokkosODE_BDF_impl.hpp
+index 106eb798b..e16ce2b14 100644
+--- a/ode/impl/KokkosODE_BDF_impl.hpp
++++ b/ode/impl/KokkosODE_BDF_impl.hpp
+@@ -379,7 +379,8 @@ KOKKOS_FUNCTION void BDFStep(ode_type& ode, scalar_type& t, scalar_type& dt, sca
+       update(eqIdx) = y_new(eqIdx) - y_predict(eqIdx);
+     }
+ 
+-    if (newton_status == KokkosODE::Experimental::newton_solver_status::MAX_ITER) {
++    if (newton_status == KokkosODE::Experimental::newton_solver_status::MAX_ITER ||
++        newton_status == KokkosODE::Experimental::newton_solver_status::LIN_SOLVE_FAIL) {
+       dt = 0.5 * dt;
+       update_D(order, 0.5, coeffs, tempD, D);
+       num_equal_steps = 0;
+diff --git a/ode/impl/KokkosODE_Newton_impl.hpp b/ode/impl/KokkosODE_Newton_impl.hpp
+index 507a1b191..6c688041a 100644
+--- a/ode/impl/KokkosODE_Newton_impl.hpp
++++ b/ode/impl/KokkosODE_Newton_impl.hpp
+@@ -21,6 +21,8 @@
+ #include "KokkosBatched_LU_Decl.hpp"
+ #include "KokkosBatched_LU_Serial_Impl.hpp"
+ #include "KokkosBatched_Gesv.hpp"
++#include "KokkosBatched_Getrf.hpp"
++#include "KokkosBatched_Getrs.hpp"
+ #include "KokkosBlas1_nrm2.hpp"
+ #include "KokkosBlas1_scal.hpp"
+ #include "KokkosBlas1_axpby.hpp"
+@@ -70,8 +72,35 @@ KOKKOS_FUNCTION KokkosODE::Experimental::newton_solver_status NewtonSolve(
+     // compute LHS
+     sys.jacobian(y0, J);
+ 
+-    // solve linear problem
+-    int linSolverStat = KokkosBatched::SerialGesv<KokkosBatched::Gesv::StaticPivoting>::invoke(J, update, rhs, tmp);
++    // Solve the linear problem J*update = rhs using LU with partial
++    // (row) pivoting. The static pivoting implemented in
++    // KokkosBatched::SerialGesv uses a greedy row-to-column assignment
++    // that can fail spuriously on well-conditioned sparse systems
++    // (e.g. chemistry Jacobians with one dense row), so it is only kept
++    // as a fallback for systems larger than the stack pivot buffer.
++    int linSolverStat = 0;
++    constexpr int pivot_buffer_size = 32;
++    if (sys.neqs <= pivot_buffer_size) {
++      int pivot_buffer[pivot_buffer_size];
++      Kokkos::View<int*, Kokkos::LayoutRight, Kokkos::AnonymousSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>> piv(
++          pivot_buffer, sys.neqs);
++      for (int idx = 0; idx < sys.neqs; ++idx) update(idx) = rhs(idx);
++      linSolverStat = KokkosBatched::SerialGetrf<KokkosBatched::Algo::Getrf::Unblocked>::invoke(J, piv);
++      if (linSolverStat == 0) {
++        linSolverStat =
++            KokkosBatched::SerialGetrs<KokkosBatched::Trans::NoTranspose, KokkosBatched::Algo::Getrs::Unblocked>::invoke(
++                J, piv, update);
++      }
++    } else {
++      linSolverStat = KokkosBatched::SerialGesv<KokkosBatched::Gesv::StaticPivoting>::invoke(J, update, rhs, tmp);
++    }
++
++    // Return before touching y0 if the linear solve failed: applying the
++    // (stale or partial) update would corrupt the iterate.
++    if (linSolverStat != 0) {
++      return newton_solver_status::LIN_SOLVE_FAIL;
++    }
++
+     KokkosBlas::SerialScale::invoke(-1, update);
+ 
+     // update solution // x = x + alpha*update
+@@ -92,10 +121,6 @@ KOKKOS_FUNCTION KokkosODE::Experimental::newton_solver_status NewtonSolve(
+       }
+     }
+ 
+-    if (linSolverStat == 1) {
+-      return newton_solver_status::LIN_SOLVE_FAIL;
+-    }
+-
+     if ((norm < (params.rel_tol * norm0)) || (it > 0 ? KokkosBlas::serial_nrm2(update) < params.abs_tol : false)) {
+       return newton_solver_status::NLS_SUCCESS;
+     }

@@ -147,7 +147,17 @@ set(Kokkos_ROOT ${CMAKE_CURRENT_BINARY_DIR}/kokkos CACHE PATH "" FORCE)
 # point at malicious code.
 FetchContent_Declare(kokkoskernels
   GIT_REPOSITORY https://github.com/kokkos/kokkos-kernels.git
-  GIT_TAG        edb0d8bfc4ab41f91fe6947c79760966ef4165e1) # v4.7.04
+  GIT_TAG        edb0d8bfc4ab41f91fe6947c79760966ef4165e1 # v4.7.04
+  # Patch the ODE Newton solver to use LU with partial (row) pivoting instead of
+  # the greedy static-pivoting Gesv, which fails spuriously on well-conditioned
+  # sparse systems such as chemistry Jacobians, and make the BDF driver halve dt
+  # on a linear-solve failure.
+  #
+  # This also runs a reverse check so that the patched files mtimes aren't
+  # updated with every single build which would trigger every file that imports
+  # them to also be rebuilt even when no actual changes have occurred
+  PATCH_COMMAND sh -c "git apply --reverse --check '${CMAKE_CURRENT_SOURCE_DIR}/patches/kokkos-kernels-ode-newton-partial-pivoting.patch' 2>/dev/null || ( git checkout -- . && git apply '${CMAKE_CURRENT_SOURCE_DIR}/patches/kokkos-kernels-ode-newton-partial-pivoting.patch' )")
+
 
 # Choose which components are enabled to improve build times
 set(KokkosKernels_ENABLE_ALL_COMPONENTS    OFF CACHE BOOL "" FORCE)
