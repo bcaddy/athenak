@@ -43,6 +43,20 @@ Chemistry::Chemistry(MeshBlockPack* ppack, ParameterInput* pin)
         << std::endl;
     std::exit(EXIT_FAILURE);
   }
+
+  // Read all chemistry inputs so that CheckUnusedParameters won't flag them
+  const std::string network = pin->GetString("chemistry", "network");
+  const std::string ode_solver = pin->GetString("chemistry", "ode_solver");
+  if (network == "H2") {
+    H2Network::GetSettings(pin, pmy_pack);
+  } else if (network == "GOW17") {
+    GOW17Network::GetSettings(pin, pmy_pack);
+  }
+  if (ode_solver == "forward_euler") {
+    ode_solvers::ForwardEuler<H2Network>::GetSettings(pin, "chemistry");
+  } else if (ode_solver == "kokkos_BDF") {
+    ode_solvers::KokkosBDF<H2Network>::GetSettings(pin, "chemistry");
+  }
 }
 
 //----------------------------------------------------------------------------------------
