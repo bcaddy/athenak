@@ -43,9 +43,22 @@ def run_gow17_uniform(ode_solver, mpi=False):
     """Run the GOW17 uniform state test and compare to the known good results from
     AthenaK. Parameterized over the different ODE solvers that work for this network. This
     function is called by both the CPU and GPU tests."""
-    RUN = testutils.mpi_run if mpi else testutils.run
+    if mpi:
+        RUN = testutils.mpi_run
+        fiducial_size = 12
+        fiducial_data["cycle"] = 80
+    else:
+        RUN = testutils.run
+        fiducial_size = 4
+
     try:
-        results = RUN(input_file, [f"chemistry/ode_solver={ode_solver}"])
+        cli_args = [
+            f"chemistry/ode_solver={ode_solver}",
+            f"mesh/nx1={fiducial_size}",
+            f"mesh/nx2={fiducial_size}",
+            f"mesh/nx3={fiducial_size}",
+        ]
+        results = RUN(input_file, cli_args)
         assert results, f"GOW17 uniform test run failed for {ode_solver} solver."
 
         data_path = pathlib.Path("./tab/GOW17_uniform.hydro_w.00010.tab")
@@ -71,7 +84,9 @@ def run_gow17_uniform(ode_solver, mpi=False):
             else:
                 test_arr = test_data[key]
                 fiducial_arr = fiducial_data[key]
-                assert test_arr.size == 4, f"The {key} dataset has the wrong size."
+                assert test_arr.size == fiducial_size, (
+                    f"The {key} dataset has the wrong size."
+                )
                 assert np.allclose(test_arr, fiducial_arr, atol=0), (
                     f"The {key} dataset contains incorrect value(s)."
                 )
