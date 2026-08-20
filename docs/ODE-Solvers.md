@@ -30,13 +30,27 @@ The simple forward Euler solver uses the explicit first-order differentiation fo
 
 Runtime Parameters:
 
-| Option               | Type   | Default | Description                                        |
-| -------------------- | ------ | ------- | -------------------------------------------------- |
-| fe_cfl               | Real   | 0.1     | cfl number for subcycling                          |
-| fe_n_subcycle_max    | int    | 1e5     | maximum number of substeps                         |
-| fe_yfloor            | Real   | 1e-12   | y value floor for calculating subcycling timescale |
+| Option               | Type         | Default | Description                                        |
+| -------------------- | ------------ | ------- | -------------------------------------------------- |
+| fe_cfl               | Real         | 0.1     | cfl number for subcycling                          |
+| fe_n_subcycle_max    | unsigned int | 1e5     | maximum number of substeps                         |
+| fe_yfloor            | Real         | 1e-12   | y value floor for calculating subcycling timescale |
 
 *`fe` stands for Forward Euler.*
+
+### Kokkos BDF
+
+The Kokkos BDF solver is a wrapper around the implicit [Backward Differentiation Formula](https://en.wikipedia.org/wiki/Backward_differentiation_formula) solver provided by [Kokkos Kernels](https://github.com/kokkos/kokkos-kernels). BDF methods are implicit, multi-step methods that are well suited to the stiff ODEs common in chemical networks. The solver adapts both its internal step size and order automatically as it integrates across the hydro timestep. Because it is implicit, the ODE system must additionally provide a Jacobian (see the [ODE System API](#ode-system-api) below).
+
+Runtime Parameters:
+
+| Option                     | Type   | Default | Description                                                                                                                                                                              |
+| -------------------------- | ------ | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| kokkos_BDF_first_step_frac | Real   | 0.0     | fraction of the hydro timestep to use for the solver's first internal step, i.e. `dt0 = kokkos_BDF_first_step_frac * dt`. The default value of 0.0 let's the solver decide the time step |
+
+*Note: The Kokkos BDF solver also has a maximum internal step size that is set to the hydro timestep `dt`. As of Kokkos Kernels 4.4 this is not implemented within Kokkos Kernels and so it currently has no effect.*
+
+*Note: The build applies [a patch](../../blob/master/patches/kokkos-kernels-ode-newton-partial-pivoting.patch) to the Kokkos Kernels ODE Newton solver. The upstream solver uses `KokkosBatched::SerialGesv` with static pivoting, whose greedy row-to-column assignment fails spuriously ("`KokkosBatched::gesv: the currently implemented static pivoting failed.`") on well-conditioned sparse Jacobians like those of chemistry networks with an internal energy equation, whose dense energy row can steal a nearly-diagonal species row's only pivot column. The patch replaces that solve with LU with partial pivoting (`SerialGetrf`/`SerialGetrs`), returns from the Newton iteration before applying the update if the linear solve fails, and makes the BDF driver halve its internal step on a linear-solve failure instead of ignoring it.*
 
 ## Developer Documentation
 
@@ -60,40 +74,46 @@ The ODE system should be contained in a class with at minimum the following memb
 
 - A `neqs` variable that contains the total number of equations in the system. This should probably be declared as `static constexpr int` since it's used to define loop limits
 - A `y` member variable. It should be an array of type `Real` with length `neqs` that contains the current state of the values being updated by the solver. This must support accesses `operator()` and `operator[]`, the `RegisterArray` class provides this syntax if a Kokkos View doesn't work.
-- A `f` member variable. It should be an array of type `Real` with length `neqs` that contains the result of evaluating the ODE
-- An `evaluate_function()` method that computes new values of `f` from the values of `y`
+- A `y_new` member variable. It should be an array of type `Real` with length `neqs` that is used as scratch space to hold the updated state (and, for the Forward Euler solver, the result of evaluating the right-hand side)
+- An `evaluate_function(t, dt, y_in, out)` method that computes the right-hand side of the ODEs (the derivatives) from the state `y_in` and writes them into `out`. It should be templated on the array types. The `t` and `dt` arguments are the current time and step size; solvers that do not need them (such as Forward Euler) simply pass zeros
+- Many solvers require an `evaluate_jacobian(t, dt, y_in, jac)` method that computes the Jacobian matrix `jac` of the right-hand side with respect to `y_in`. Like `evaluate_function`, it should be templated on the array types. The `chemistry::numerical_jacobian` helper can be used to compute the Jacobian via finite differences if an analytic Jacobian is not available.
 
 Specific ODE solvers might require other methods and they are noted below.
 
 ### Code Example
 
-See the `Chemistry::UpdateChemistryTask` and `Chemistry::UpdateChemistry` methods in  [chemistry.cpp](../../blob/master/src/chemistry/chemistry.cpp) for a complete in example. A simpliefied version of the most salient sections is below.
+See the `Chemistry::UpdateChemistryTask` method in [chemistry_tasks.cpp](../../blob/main-chemistry/src/chemistry/chemistry_tasks.cpp) and the `Chemistry::UpdateChemistry` method in [chemistry.cpp](../../blob/main-chemistry/src/chemistry/chemistry.cpp) for a complete example. A simplified version of the most salient sections is below.
 
 ```cpp
-// First we select which ODE system to use (the H2 network) and which ODE solver
-// to use (forward euler) and get their settings from the input file
+// First we read the requested network and ODE solver from the input file and
+// dispatch to the matching template instantiation of UpdateChemistry. Each
+// (network, solver) pair that should be supported must be listed here.
 TaskStatus Chemistry::UpdateChemistryTask(Driver* d, int stage) {
   const std::string network = my_pin->GetString("chemistry", "network");
   const std::string ode_solver = my_pin->GetString("chemistry", "ode_solver");
 
   if (network == "H2") {
-    auto h2_settings = H2Network::GetSettings(my_pin);
     if (ode_solver == "forward_euler") {
-      auto fe_settings = ode_solvers::ForwardEuler<H2Network>::GetSettings(
-          my_pin, "chemistry");
-      UpdateChemistry<ode_solvers::ForwardEuler<H2Network>, H2Network>(
-          fe_settings, h2_settings);
+      UpdateChemistry<ode_solvers::ForwardEuler, H2Network>();
+    } else if (ode_solver == "kokkos_BDF") {
+      UpdateChemistry<ode_solvers::KokkosBDF, H2Network>();
+    }
+  } else if (network == "GOW17") {
+    if (ode_solver == "forward_euler") {
+      UpdateChemistry<ode_solvers::ForwardEuler, GOW17Network>();
+    } else if (ode_solver == "kokkos_BDF") {
+      UpdateChemistry<ode_solvers::KokkosBDF, GOW17Network>();
     }
   }
 
   return TaskStatus::complete;
 }
 
-// Now we actually use the solver in a kernel to solve the system of ODEs
-template <typename ODE_Solver_t, typename Network_t, typename ODESettings,
-          typename NetworkSettings>
-void Chemistry::UpdateChemistry(ODESettings const& ode_settings,
-                                NetworkSettings const& network_settings) {
+// Now we actually use the solver in a kernel to solve the system of ODEs. The
+// method is templated on the ODE solver (itself a template on the network) and
+// on the network, so the solver can be fully inlined for the GPU.
+template <template <typename> class ODE_Solver_t, typename Network_t>
+void Chemistry::UpdateChemistry() {
   // ------ Collect variables that we'll need -----
   // The primitive grid
   auto w0 = GetW0();
@@ -102,48 +122,43 @@ void Chemistry::UpdateChemistry(ODESettings const& ode_settings,
   // The timestep
   Real const dt = pmy_pack->pmesh->dt;
 
-  // ----- Variables for the ODE solver -----
-  // For reporting if the ODE solver doesn't converge
-  DvceArray0D<bool> chemisty_ode_failure("chemisty_ode_failure", false);
+  // ----- Load the network and ODE solver settings from the input file -----
+  auto const ode_settings =
+      ODE_Solver_t<Network_t>::GetSettings(my_pin, "chemistry");
+  auto const network_settings = Network_t::GetSettings(my_pin, pmy_pack);
 
   Kokkos::parallel_for(
       "Chemistry_ODE_Solve", policy,
       KOKKOS_LAMBDA(const int& mb_idx, const int& k, const int& j,
                     const int& i) {
-        // Create the chemisty object
-        Network_t chem_net(network_settings, w0(mb_idx, IDN, k, j, i));
+        // Create the chemistry object
+        Network_t chem_net(network_settings, mb_idx, k, j, i, w0, /* ... */);
 
         // ------ Load cell values ------
-        // Load values into the `y` array
+        // Load the chemical species into the `y` array. The loop runs to
+        // neqs - 1 because the internal energy occupies the last slot.
         int grid_idx = species_start_idx;
-        for (int s_idx = 0; s_idx < Network_t::neqs; s_idx++) {
+        for (int s_idx = 0; s_idx < Network_t::neqs - 1; s_idx++) {
           chem_net.y(s_idx) = w0(mb_idx, grid_idx, k, j, i);
           grid_idx += 1;
         }
+        // Load the internal energy into the last slot
+        chem_net.y(Network_t::IIE) = w0(mb_idx, IEN, k, j, i);
 
         // ------ Solve the ODEs ------
+        // The solver aborts via Kokkos::abort if it fails to converge, so there
+        // is no failure flag to check here.
         ODE_Solver_t ode_solver(ode_settings, chem_net, t_start, dt);
         ode_solver.SolveODE();
 
-        // check if the ODE solver failed
-        if (ode_solver.failed) {
-          chemisty_ode_failure() = ode_solver.failed;
-        }
-
         // ------ Write cell values back out ------
-        // Write the values back out
-        int grid_idx = species_start_idx;
-        for (int s_idx = 0; s_idx < Network_t::neqs; s_idx++) {
+        grid_idx = species_start_idx;
+        for (int s_idx = 0; s_idx < Network_t::neqs - 1; s_idx++) {
           w0(mb_idx, grid_idx, k, j, i) = chem_net.y(s_idx);
           grid_idx += 1;
         }
+        // Write the internal energy back out
+        w0(mb_idx, IEN, k, j, i) = chem_net.y(Network_t::IIE);
       });
-
-  // Get the failure flag and check for failure
-  bool chemisty_ode_failure_h;
-  Kokkos::deep_copy(chemisty_ode_failure_h, chemisty_ode_failure);
-  if (chemisty_ode_failure_h) {
-    std::cerr << "The ODE solver failed to converge." << std::endl;
-  }
 }
 ```
