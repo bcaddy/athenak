@@ -4,11 +4,12 @@ different ODE solvers
 """
 
 # Modules
-import pytest
-import test_suite.testutils as testutils
-import athena_read
 import pathlib
+
+import athena_read
 import numpy as np
+import pytest
+from test_suite import testutils
 
 ode_solvers = ["forward_euler", "kokkos_BDF"]
 input_file = "inputs/H2_uniform_test.athinput"
@@ -71,7 +72,7 @@ def H2_uniform_analytical_solution(
 
 def H2_uniform_l1_errors(time, fH2_test, fH_test, e_int_test):
     # First compute the analytical answers
-    unit_energy_in_erg, n_H, fH_fiducial, fH2_fiducial, Tg_fiducial, e_int_fiducial = (
+    unit_energy_in_erg, n_H, fH_fiducial, fH2_fiducial, _, e_int_fiducial = (
         H2_uniform_analytical_solution(time)
     )
 

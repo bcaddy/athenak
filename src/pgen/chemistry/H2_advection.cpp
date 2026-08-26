@@ -15,6 +15,7 @@
 #include "chemistry/chemistry.hpp"
 #include "coordinates/cell_locations.hpp"
 #include "eos/eos.hpp"
+#include "globals.hpp"
 #include "hydro/hydro.hpp"
 #include "mesh/mesh.hpp"
 #include "mhd/mhd.hpp"
@@ -23,11 +24,66 @@
 #include "units/units.hpp"
 
 //----------------------------------------------------------------------------------------
+//! \fn void RefinementCondition()
+//! Implements custom AMR refinement condition for the H2 advection problem
+void RefinementCondition(MeshBlockPack* pmbp) {
+  auto& refine_flag = pmbp->pmesh->pmr->refine_flag;
+  int nmb = pmbp->nmb_thispack;
+  auto& indcs = pmbp->pmesh->mb_indcs;
+  int &is = indcs.is, nx1 = indcs.nx1;
+  int &js = indcs.js, nx2 = indcs.nx2;
+  int &ks = indcs.ks, nx3 = indcs.nx3;
+  const int nkji = nx3 * nx2 * nx1;
+  const int nji = nx2 * nx1;
+  int mbs = pmbp->pmesh->gids_eachrank[global_variable::my_rank];
+  auto& multi_d = pmbp->pmesh->multi_d;
+  auto& three_d = pmbp->pmesh->three_d;
+  auto& w0 = pmbp->phydro->w0;
+
+  // Set the refinement parameters
+  const Real valmax = 0.2;
+  const int field = pmbp->pchemistry->get_chemistry_scalars_first_idx() +
+                    chemistry::H2Network::IH;
+
+  // Mark blocks for refinement
+  par_for_outer(
+      "H2_Advection_RefinementCondition", DevExeSpace(), 0, 0, 0, (nmb - 1),
+      KOKKOS_LAMBDA(TeamMember_t tmember, const int m) {
+        Real team_qmax;
+        Kokkos::parallel_reduce(
+            Kokkos::TeamThreadRange(tmember, nkji),
+            [=](const int idx, Real& qmax) {
+              int k = (idx) / nji;
+              int j = (idx - k * nji) / nx1;
+              int i = (idx - k * nji - j * nx1) + is;
+              j += js;
+              k += ks;
+              qmax = Kokkos::fmax(w0(m, field, k, j, i), qmax);
+            },
+            Kokkos::Max<Real>(team_qmax));
+
+        // only derefine when flag has not been set by other criteria
+        int& flag = refine_flag.d_view(m + mbs);
+        if (team_qmax > valmax) {
+          flag = 1;
+        }
+        if ((team_qmax < valmax) && (flag == 0)) {
+          flag = -1;
+        }
+      });
+
+  // sync host and device
+  refine_flag.template modify<DevExeSpace>();
+  refine_flag.template sync<HostMemSpace>();
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn ProblemGenerator::H2_advection()
 //! \brief Problem Generator for the H2 test problem that advects a gaussian
 //! state
-
 void ProblemGenerator::H2Advection(ParameterInput* pin, const bool restart) {
+  user_ref_func = RefinementCondition;
+
   if (restart) return;
 
   // capture variables for the kernel
