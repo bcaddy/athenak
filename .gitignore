@@ -27,3 +27,6 @@ tst/test_log.txt
 
 # python cache
 __pycache__/
+
+# Profiler Files
+*.ncu-rep
