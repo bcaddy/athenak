@@ -66,7 +66,6 @@ GOW17_Z_g        = 1.           # gas metallicity
 GOW17_xHe        = 0.1          # He per H, default = 0.1
 GOW17_xC         = 1.6e-4       # C atom per H, this is Z=1 value, default 1.6e-4
 GOW17_xO         = 3.2e-4       # O atom per H, this is Z=1 value, default 3.2e-4
-GOW17_xS         = 3.5e-6       # S atom per H, this is Z=1 value, default 3.5e-6
 GOW17_xSi        = 1.7e-6       # Si atom per H, this is Z=1 value, default 1.7e-6
 
 <problem>

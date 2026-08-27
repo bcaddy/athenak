@@ -43,6 +43,20 @@ Chemistry::Chemistry(MeshBlockPack* ppack, ParameterInput* pin)
         << std::endl;
     std::exit(EXIT_FAILURE);
   }
+
+  // Read all chemistry inputs so that CheckUnusedParameters won't flag them
+  const std::string network = pin->GetString("chemistry", "network");
+  const std::string ode_solver = pin->GetString("chemistry", "ode_solver");
+  if (network == "H2") {
+    H2Network::GetSettings(pin, pmy_pack);
+  } else if (network == "GOW17") {
+    GOW17Network::GetSettings(pin, pmy_pack);
+  }
+  if (ode_solver == "forward_euler") {
+    ode_solvers::ForwardEuler<H2Network>::GetSettings(pin, "chemistry");
+  } else if (ode_solver == "kokkos_BDF") {
+    ode_solvers::KokkosBDF<H2Network>::GetSettings(pin, "chemistry");
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -83,9 +97,16 @@ void Chemistry::UpdateChemistry() {
   const auto ir = pchem_rad.ir;
 
   // ----- Load network and ODE solver settings -----
-  auto const ode_settings =
+  // Read the files and cache the results. Static variables have static storage
+  // duration and can't be captured by lambdas, like Kokkos parallel regions. To
+  // get around this the static cached variables are copied to local variables
+  // with automatic duration that can be captured by a lambda
+  static auto const ode_settings_cached =
       ODE_Solver_t<Network_t>::GetSettings(my_pin, "chemistry");
-  auto const network_settings = Network_t::GetSettings(my_pin, pmy_pack);
+  static auto const network_settings_cached =
+      Network_t::GetSettings(my_pin, pmy_pack);
+  auto const ode_settings = ode_settings_cached;
+  auto const network_settings = network_settings_cached;
 
   // ----- Get all the loop limits and generate the parallel policy ------
   // NOLINTNEXTLINE(whitespace/braces)
