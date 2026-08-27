@@ -50,6 +50,8 @@ Runtime Parameters:
 
 *Note: The Kokkos BDF solver also has a maximum internal step size that is set to the hydro timestep `dt`. As of Kokkos Kernels 4.4 this is not implemented within Kokkos Kernels and so it currently has no effect.*
 
+*Note: The build applies [a patch](../../blob/master/patches/kokkos-kernels-ode-newton-partial-pivoting.patch) to the Kokkos Kernels ODE Newton solver. The upstream solver uses `KokkosBatched::SerialGesv` with static pivoting, whose greedy row-to-column assignment fails spuriously ("`KokkosBatched::gesv: the currently implemented static pivoting failed.`") on well-conditioned sparse Jacobians like those of chemistry networks with an internal energy equation, whose dense energy row can steal a nearly-diagonal species row's only pivot column. The patch replaces that solve with LU with partial pivoting (`SerialGetrf`/`SerialGetrs`), returns from the Newton iteration before applying the update if the linear solve fails, and makes the BDF driver halve its internal step on a linear-solve failure instead of ignoring it.*
+
 ## Developer Documentation
 
 To facilitate easy swapping between different ODE solvers both the solvers and ODE system classes must have a very strict APIs. The forward euler solver in [forward_euler.hpp](../../blob/master/src/ode_solvers/forward_euler.hpp) and H2 network in [H2.hpp](../../blob/master/src/chemistry/network/H2.hpp) can serve as a templates but here's a description of the APIs in more detail.
