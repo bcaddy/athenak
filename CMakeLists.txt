@@ -141,23 +141,28 @@ endif()
 include(FetchContent)
 set(Kokkos_ROOT ${CMAKE_CURRENT_BINARY_DIR}/kokkos CACHE PATH "" FORCE)
 
-# Get Kokkos Kernels and pin to a specific version. The version should match the Kokkos
-# version. This accepts either a git SHA or tag. Best practice would be to use the git SHA
-# corresponding to the version/tag you want to avoid a malicious actor changing the tag to
-# point at malicious code.
-FetchContent_Declare(kokkoskernels
-  GIT_REPOSITORY https://github.com/kokkos/kokkos-kernels.git
-  GIT_TAG        edb0d8bfc4ab41f91fe6947c79760966ef4165e1 # v4.7.04
-  # Patch the ODE Newton solver to use LU with partial (row) pivoting instead of
-  # the greedy static-pivoting Gesv, which fails spuriously on well-conditioned
-  # sparse systems such as chemistry Jacobians, and make the BDF driver halve dt
-  # on a linear-solve failure.
-  #
-  # This also runs a reverse check so that the patched files mtimes aren't
-  # updated with every single build which would trigger every file that imports
-  # them to also be rebuilt even when no actual changes have occurred
-  PATCH_COMMAND sh -c "git apply --reverse --check '${CMAKE_CURRENT_SOURCE_DIR}/patches/kokkos-kernels-ode-newton-partial-pivoting.patch' 2>/dev/null || ( git checkout -- . && git apply '${CMAKE_CURRENT_SOURCE_DIR}/patches/kokkos-kernels-ode-newton-partial-pivoting.patch' )")
+# Get Kokkos Kernels. By default it is fetched from the remote repo and pinned to a
+# specific version. To instead build against a local instance, configure with:
+#
+#   -D KokkosKernels_PATH=/path/to/your/kokkos-kernels
+#
+# When set, that directory is used and edits are picked up on the next build.
+set(KokkosKernels_PATH "" CACHE PATH
+  "Path to a local Kokkos Kernels checkout to build against instead of fetching it")
 
+if(KokkosKernels_PATH)
+  message(STATUS "Using local Kokkos Kernels from ${KokkosKernels_PATH}")
+  FetchContent_Declare(kokkoskernels
+    SOURCE_DIR ${KokkosKernels_PATH})
+else()
+  # Pin to a specific version, which should match the Kokkos version. This accepts either
+  # a git SHA or tag. Best practice would be to use the git SHA corresponding to the
+  # version/tag you want to avoid a malicious actor changing the tag to point at malicious
+  # code.
+  FetchContent_Declare(kokkoskernels
+    GIT_REPOSITORY https://github.com/bcaddy/kokkos-kernels.git
+    GIT_TAG        67985a34455641ea37c449ff28c5dc52611eed12) # v4.7.04+Bob's changes
+endif()
 
 # Choose which components are enabled to improve build times
 set(KokkosKernels_ENABLE_ALL_COMPONENTS    OFF CACHE BOOL "" FORCE)
@@ -168,7 +173,6 @@ set(KokkosKernels_ENABLE_COMPONENT_LAPACK  OFF CACHE BOOL "" FORCE)
 set(KokkosKernels_ENABLE_COMPONENT_GRAPH   OFF CACHE BOOL "" FORCE)
 set(KokkosKernels_ENABLE_COMPONENT_SPARSE  OFF CACHE BOOL "" FORCE)
 
-FetchContent_Declare(kokkoskernels ...)
 FetchContent_MakeAvailable(kokkoskernels)
 
 target_link_libraries(athena PUBLIC Kokkos::kokkoskernels)
