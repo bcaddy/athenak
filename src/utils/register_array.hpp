@@ -22,22 +22,20 @@
  */
 template <typename T, std::size_t N>
 struct RegisterArray {
-  const std::size_t size = N;
+  KOKKOS_FORCEINLINE_FUNCTION
+  std::size_t size() const { return size_; }
 
   KOKKOS_FORCEINLINE_FUNCTION
-  T& operator[](std::size_t const i) { return raw_array[i]; }
+  T& operator[](std::size_t const i) const { return raw_array[i]; }
 
   KOKKOS_FORCEINLINE_FUNCTION
-  const T& operator[](std::size_t const i) const { return raw_array[i]; }
-
-  KOKKOS_FORCEINLINE_FUNCTION
-  T& operator()(std::size_t const i) { return raw_array[i]; }
-
-  KOKKOS_FORCEINLINE_FUNCTION
-  const T& operator()(std::size_t const i) const { return raw_array[i]; }
+  T& operator()(std::size_t const i) const { return raw_array[i]; }
 
  private:
-  T raw_array[N];
+  const std::size_t size_ = N;
+  // mutable so that element access through a const reference yields mutable
+  // elements, matching Kokkos::View semantics
+  mutable T raw_array[N];
 };
 
 #endif  // UTILS_REGISTER_ARRAY_HPP_

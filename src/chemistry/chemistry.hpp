@@ -17,6 +17,7 @@
 #include "athena.hpp"
 #include "bvals/bvals.hpp"
 #include "chemistry/network/chemistry_networks.hpp"
+#include "chemistry/radiation.hpp"
 #include "parameter_input.hpp"
 #include "tasklist/task_list.hpp"
 
@@ -25,8 +26,17 @@ namespace chemistry {
 //! \struct ChemistryTaskIDs
 //  \brief container to hold TaskIDs of all chemistry tasks
 struct ChemistryTaskIDs {
+  TaskID init_recv;
   TaskID update_chemistry;
   TaskID prim_to_cons;
+  TaskID restrict_u;
+  TaskID send_u;
+  TaskID recv_u;
+  TaskID bcs;
+  TaskID prolongate;
+  TaskID cons_to_prim;
+  TaskID csend;
+  TaskID crecv;
 };
 
 //! \class Chemistry
@@ -61,7 +71,7 @@ class Chemistry {
    */
   TaskStatus UpdateChemistryTask(Driver* d, int stage);
 
-template <template <typename> class ODE_Solver_t, typename Network_t>
+  template <template <typename> class ODE_Solver_t, typename Network_t>
   void UpdateChemistry();
 
   /*!
@@ -69,6 +79,30 @@ template <template <typename> class ODE_Solver_t, typename Network_t>
    * primitive grid
    */
   TaskStatus PrimToCons(Driver* pdrive, int stage);
+
+  /// Tasks for communicating ghost cells. InitRecv posts the non-blocking MPI
+  /// receives and must run before SendU/RecvU; ClearSend/ClearRecv verify all
+  /// communications have completed so the buffers are safe to reuse
+  TaskStatus InitRecv(Driver* pdrive, int stage);
+  TaskStatus SendU(Driver* pdrive, int stage);
+  TaskStatus RecvU(Driver* pdrive, int stage);
+  TaskStatus ClearSend(Driver* pdrive, int stage);
+  TaskStatus ClearRecv(Driver* pdrive, int stage);
+
+  /// Task to restrict the conserved variables into the coarse arrays with
+  /// SMR/AMR, needed before they are packed and sent by SendU
+  TaskStatus RestrictU(Driver* pdrive, int stage);
+
+  /// Task to prolongate the conserved (or primitive) variables into fine/coarse
+  /// boundaries with SMR/AMR
+  TaskStatus Prolongate(Driver* pdrive, int stage);
+
+  /// Task to re-apply physical boundary conditions after the chemistry update
+  TaskStatus ApplyPhysicalBCs(Driver* pdrive, int stage);
+
+  /// Task to update the primitive grid, over all cells including the ghost
+  /// cells, from the conserved grid after the ghost cell exchange
+  TaskStatus ConsToPrim(Driver* pdrive, int stage);
 
   /*!
    * \brief Compute the number of required passive scalars that the chemistry
@@ -98,6 +132,8 @@ template <template <typename> class ODE_Solver_t, typename Network_t>
     // internal energy equation
     if (network == "H2") {
       num_species = H2Network::neqs - 1;
+    } else if (network == "GOW17") {
+      num_species = GOW17Network::neqs - 1;
     }
 
     return num_species;
@@ -129,6 +165,9 @@ template <template <typename> class ODE_Solver_t, typename Network_t>
   MeshBlockPack* const pmy_pack;
 
   ParameterInput* my_pin;
+
+  // Chemistry radiation
+  const chemistry::Radiation pchem_rad;
 
   // These indicate if hydro or MHD is in use
   bool const is_hydro_enabled;
