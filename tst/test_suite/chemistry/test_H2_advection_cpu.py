@@ -9,6 +9,12 @@ import test_suite.chemistry.test_H2_advection_gpu as h2_advection
 
 
 @pytest.mark.parametrize("ode_solver", h2_advection.ode_solvers)
-def test_h2_uniform_cpu(ode_solver):
-    """CPU Test for H2 uniform test problem."""
+def test_h2_advection_cpu(ode_solver):
+    """CPU Test for H2 advection test problem."""
     h2_advection.run_h2_advection(ode_solver)
+
+
+@pytest.mark.parametrize("ode_solver", h2_advection.ode_solvers)
+def test_h2_advection_AMR_cpu(ode_solver):
+    """CPU Test for H2 advection AMR test problem."""
+    h2_advection.run_h2_advection_amr(ode_solver)

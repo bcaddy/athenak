@@ -11,7 +11,6 @@ import pathlib
 import numpy as np
 
 ode_solvers = ["forward_euler", "kokkos_BDF"]
-input_file = "inputs/H2_advection_test.athinput"
 
 
 class constants:
@@ -84,6 +83,7 @@ def run_h2_advection(ode_solver, mpi=False):
     well as running a convergence test. Parameterized over the different ODE solvers. This
     function is called by both the CPU and GPU tests."""
 
+    input_file = "inputs/H2_advection_test.athinput"
     resolutions = np.array([32, 64, 128, 256])
     n_cycle_fiducial = (142, 283, 565, 1130)
     L1_limits_factor = 1.1
@@ -188,7 +188,88 @@ def run_h2_advection(ode_solver, mpi=False):
         )
 
 
+def run_h2_advection_amr(ode_solver, mpi=False):
+    """Run the H2 advecting Gaussian state test with AMR and compare to the
+    analytic results. Parameterized over the different ODE solvers. This
+    function is called by both the CPU and GPU tests."""
+
+    input_file = "inputs/H2_advection_amr_test.athinput"
+    n_cycle_fiducial = 1118
+    error_factor = 1.01
+    H2_L1_limits_t5 = 0.001175173343522064 * error_factor
+    H_L1_limits_t5 = 0.0023496232495441183 * error_factor
+    e_int_fiducial = 1.29462e2
+
+    try:
+        if mpi:
+            results = testutils.mpi_run(
+                input_file,
+                [f"chemistry/ode_solver={ode_solver}"],
+                threads=8,
+            )
+        else:
+            results = testutils.run(
+                input_file,
+                [f"chemistry/ode_solver={ode_solver}"],
+            )
+        assert results, f"H2 uniform test run failed for {ode_solver} solver."
+
+        # Load the data
+        final_state = athena_read.tab("./tab/H2_advection.hydro_w.00001.tab")
+
+        # Verify the AMR
+        test_cell_sizes = final_state["x1v"][1:] - final_state["x1v"][:-1]
+        # Fiducial AMR cell sizes: 31 coarse cells, then two symmetric bands
+        # refining once (dx/2) and a central band refined twice (dx/4). The
+        # values keep the float64 noise from the printed .tab data, so the
+        # repeating patterns are reproduced exactly rather than rounded.
+        refine_band = np.tile([0.01562999999999981, 0.01562000000000019], 8)[:15]
+        fiducial_cell_sizes = np.concatenate(
+            [
+                np.full(31, 0.03125),
+                [0.02343500000000009],  # coarse -> fine transition
+                refine_band,
+                [0.01172000000000017],  # fine -> finer transition
+                np.tile(
+                    [
+                        0.00780999999999987,
+                        0.00781000000000009,
+                        0.00780999999999987,
+                        0.00782000000000016,
+                    ],
+                    16,
+                )[:63],
+                [0.01172000000000017],  # finer -> fine transition
+                refine_band,
+            ]
+        )
+        assert np.allclose(test_cell_sizes, fiducial_cell_sizes, rtol=1e-15, atol=0), (
+            "The sizes of the AMR cells are not correct"
+        )
+
+        # Verify the states
+        _, _ = H2_advection_verify_state(
+            final_state,
+            t=5 * constants.pc_cgs / constants.km_s_cgs,
+            mu=1.5,
+            sigma=0.1,
+            e_int_fiducial=e_int_fiducial,
+            n_dt_fiducial=n_cycle_fiducial,
+            H2_L1_limit=H2_L1_limits_t5,
+            H_L1_limit=H_L1_limits_t5,
+        )
+
+    finally:
+        testutils.cleanup()
+
+
 @pytest.mark.parametrize("ode_solver", ode_solvers)
-def test_h2_uniform_gpu(ode_solver):
+def test_h2_advection_gpu(ode_solver):
     """GPU Test for H2 advection test problem."""
     run_h2_advection(ode_solver)
+
+
+@pytest.mark.parametrize("ode_solver", ode_solvers)
+def test_h2_advection_amr_gpu(ode_solver):
+    """GPU Test for H2 advection AMR test problem."""
+    run_h2_advection_amr(ode_solver)
