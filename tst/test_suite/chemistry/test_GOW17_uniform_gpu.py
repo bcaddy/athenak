@@ -94,6 +94,66 @@ def run_gow17_uniform(ode_solver, mpi=False):
         testutils.cleanup()
 
 
+def run_gow17_cfl_dependence(ode_solver, mpi=False):
+    """Run the GOW17 uniform state test and check if the results depend on the CFL
+    number"""
+    if mpi:
+        RUN = testutils.mpi_run
+        fiducial_size = 12
+        fiducial_data["cycle"] = 80
+    else:
+        RUN = testutils.run
+        fiducial_size = 4
+
+    try:
+        cli_args = [
+            f"chemistry/ode_solver={ode_solver}",
+            f"mesh/nx1={fiducial_size}",
+            f"mesh/nx2={fiducial_size}",
+            f"mesh/nx3={fiducial_size}",
+            "mesh/x1min=-0.01",
+            "mesh/x1max=0.01",
+            "mesh/x2min=-0.01",
+            "mesh/x2max=0.01",
+            "mesh/x3min=-0.01",
+            "mesh/x3max=0.01",
+            "mesh/ix3_bc=outflow",
+            "mesh/ox3_bc=outflow",
+            "time/tlim=0.01",
+        ]
+        low_cfl = 0.01
+        high_cfl = 0.8
+        data_path = pathlib.Path("./tab/GOW17_uniform.hydro_w.00001.tab")
+
+        # Run for the low CFL number
+        results = RUN(input_file, cli_args + [f"time/cfl_number={low_cfl}"])
+        assert results, (
+            f"GOW17 uniform test run failed for {ode_solver} solver and CFL = {low_cfl}"
+            " in CFL test."
+        )
+        low_cfl_data = athena_read.tab(data_path)
+
+        # Run for the high CFL number
+        results = RUN(input_file, cli_args + [f"time/cfl_number={high_cfl}"])
+        assert results, (
+            f"GOW17 uniform test run failed for {ode_solver} solver and CFL = {high_cfl}"
+            " in CFL test."
+        )
+        high_cfl_data = athena_read.tab(data_path)
+
+        # Now check for correct results
+        ignore_list = ("i", "x1v", "time", "cycle")
+        for key in low_cfl_data:
+            if key in ignore_list:
+                continue
+
+            assert np.allclose(low_cfl_data[key], high_cfl_data[key]), (
+                f"The {key} datasets don't match with different CFL numbers"
+            )
+    finally:
+        testutils.cleanup()
+
+
 @pytest.mark.parametrize("ode_solver", ode_solvers)
 def test_gow17_uniform_gpu(ode_solver):
     """GPU Test for GOW17 uniform test problem."""
