@@ -83,9 +83,22 @@ class KokkosBDF {
 
   KOKKOS_FUNCTION
   void SolveODE() {
-    KokkosODE::Experimental::BDFSolve(ode_system, t_start, t_end, dt0, max_step,
-                                      ode_system.y, ode_system.y_new, temp_,
-                                      temp2_);
+    auto const status = KokkosODE::Experimental::BDFSolve(
+        ode_system, t_start, t_end, dt0, max_step, ode_system.y,
+        ode_system.y_new, temp_, temp2_);
+
+    // Note that this may not trigger an MPI_Abort, instead just aborting a
+    // single rank. If that becomes a problem it can be replaced with a failure
+    // flag that is checked on the host.
+    if (status != KokkosODE::Experimental::ode_solver_status::SUCCESS) {
+      // A non-success status means the solver could not complete the interval
+      // and y holds the solution at some time < t_end
+      Kokkos::printf(
+          "KokkosBDF: BDF solve failed with status %d at t_start=%.17g "
+          "dt=%.17g\n",
+          static_cast<int>(status), t_start, dt);
+      Kokkos::abort("KokkosBDF: BDF ODE solve failed");
+    }
   }
 
  private:
