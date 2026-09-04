@@ -147,7 +147,8 @@ def run_gow17_cfl_dependence(ode_solver, mpi=False):
             if key in ignore_list:
                 continue
 
-            assert np.allclose(low_cfl_data[key], high_cfl_data[key]), (
+            # Tolerances set to account for the tolerances given to the ODE solver
+            assert np.allclose(low_cfl_data[key], high_cfl_data[key], atol=5e-6, rtol=5e-3), (
                 f"The {key} datasets don't match with different CFL numbers"
             )
     finally:
