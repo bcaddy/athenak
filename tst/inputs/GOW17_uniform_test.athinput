@@ -58,7 +58,6 @@ mu          = 1.27                    # mean molecular weight
 <chemistry>
 network                    = GOW17      # Chemistry network to be used
 ode_solver                 = kokkos_BDF # ODE solver to be used
-kokkos_BDF_first_step_frac = 1.0e-6     # The first step fraction, tuned for this problem
 
 # chemistry network parameters:
 GOW17_Z_d        = 1.           # dust metallicity
