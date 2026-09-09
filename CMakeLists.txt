@@ -161,7 +161,7 @@ else()
   # code.
   FetchContent_Declare(kokkoskernels
     GIT_REPOSITORY https://github.com/bcaddy/kokkos-kernels.git
-    GIT_TAG        67985a34455641ea37c449ff28c5dc52611eed12) # v4.7.04+Bob's changes
+    GIT_TAG        d7509d693e121f50338f1acd776d48d162f23a40) # v4.7.04+Bob's changes
 endif()
 
 # Choose which components are enabled to improve build times
