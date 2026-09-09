@@ -132,7 +132,7 @@ KOKKOS_FUNCTION void numerical_jacobian(const network_t& network, const Real t,
   for (int j = 0; j < network.neqs; ++j) {
     // Add the perturbation to the jth element
     const Real perturbation =
-        perturbation_factor * Kokkos::fmax(Kokkos::abs(y_in(j)), Real(1.0));
+        perturbation_factor * Kokkos::fmax(Kokkos::abs(y_in(j)), Real(1.0e-6));
     const Real y_unperturbed = y_in(j);
     y_in(j) += perturbation;
 

@@ -672,25 +672,13 @@ class GOW17Network {
   /*!
    * \brief Setup the network for the next iteration of the ODE solver
    *
-   * \details Floors the state at zero and checks it for NaNs/Infs, then
-   * computes the ghost species and updates the reaction rates.
+   * \details Computes the ghost species and updates the reaction rates.
    *
    * \param y_in The current state
    * \return GhostSpecies The ghost species abundances
    */
   template <class vec_type>
   KOKKOS_FUNCTION GhostSpecies SetupNextStep(const vec_type& y_in) const {
-    // Verify abundances are positive, finite, and not NaN valued
-    for (size_t i = 0; i < neqs; i++) {
-      // Verify positivity
-      y_in(i) = Kokkos::fmax(y_in(i), 0.0);
-
-      // Check if inf or NaN valued and throw abort if that's the case
-      if (Kokkos::isinf(y_in(i)) || Kokkos::isnan(y_in(i))) {
-        Kokkos::abort("Error: NaN or Inf value found in GOW17 `y` array\n");
-      }
-    }
-
     // Set the ghost species
     const GhostSpecies ghosts = ComputeGhostSpecies_(y_in);
 
@@ -707,14 +695,25 @@ class GOW17Network {
   KOKKOS_FUNCTION void evaluate_function(const Real /*t*/, const Real /*dt*/,
                                          const vec_type1& y_in,
                                          vec_type2& f) const {
+    RegisterArray<Real, neqs> y_floor;
+    for (size_t i = 0; i < neqs; i++) {
+      // Check if inf or NaN valued and throw abort if that's the case
+      if (Kokkos::isinf(y_in(i)) || Kokkos::isnan(y_in(i))) {
+        Kokkos::abort("Error: NaN or Inf value found in GOW17 `y` array\n");
+      }
+
+      // Floor the values
+      y_floor(i) = Kokkos::fmax(y_in(i), 0.0);
+    }
+
     // ----- Setup for the next step -----
-    const auto ghosts = SetupNextStep(y_in);
+    const auto ghosts = SetupNextStep(y_floor);
 
     // ----- Internal energy equation -----
-    f(IIE) = Edot(y_in, ghosts);
+    f(IIE) = Edot(y_floor, ghosts);
 
     // ----- Creation & Destruction Rates -----
-    const auto rates = CDRates(y_in, ghosts);
+    const auto rates = CDRates(y_floor, ghosts);
 
     // Compute the changes
     for (size_t i = 0; i < neqs - 1; i++) {
