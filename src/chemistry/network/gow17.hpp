@@ -1291,7 +1291,14 @@ class GOW17Network {
           }
           if (dTdx == Real(0.0)) continue;
           const Real factor = dTdx / dTdE;
-          for (int k = 0; k < neqs; ++k) {
+          // Species rows only. The energy row already carries the thermal path:
+          // Edot recomputes T from y_in rather than reading cached_T_, so the
+          // species column's finite difference contains (dEdot/dT)(dT/dy_j)
+          // whether or not the rates were frozen. Adding jac(IIE,IIE)*factor on
+          // top of it would count that term twice. What row IIE does lose is
+          // only the part flowing through the five frozen coefficients Edot
+          // reads, which is far smaller than the term being double-counted.
+          for (int k = 0; k < neqs - 1; ++k) {
             jac(k, j) += jac(k, IIE) * factor;
           }
         }
