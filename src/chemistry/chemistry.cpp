@@ -131,6 +131,15 @@ void Chemistry::UpdateChemistry() {
     Kokkos::deep_copy(substeps_max, 0.0);
   }
 
+  // Timed only when the diagnostic is on: the fences below serialise the
+  // chemistry kernel against everything else, which is the point when
+  // measuring it and a cost when not.
+  Kokkos::Timer chem_timer;
+  if (count_substeps) {
+    Kokkos::fence();
+    chem_timer.reset();
+  }
+
   Kokkos::parallel_for(
       "Chemistry_ODE_Solve", policy,
       KOKKOS_LAMBDA(const int& mb_idx, const int& k, const int& j,
@@ -180,6 +189,8 @@ void Chemistry::UpdateChemistry() {
       });
 
   if (count_substeps) {
+    Kokkos::fence();
+    Real const chem_seconds = chem_timer.seconds();
     Real total = 0.0, max = 0.0;
     Kokkos::deep_copy(total, substeps_total);
     Kokkos::deep_copy(max, substeps_max);
@@ -188,10 +199,20 @@ void Chemistry::UpdateChemistry() {
     for (int n = 0; n < 4; ++n) {
       ncells *= static_cast<std::uint64_t>(end_limit[n] - start_limit[n]);
     }
+    // Cost per cell-substep is the quantity that compares solvers: it divides
+    // out both the cell count and however many substeps the controller chose,
+    // leaving what one chemistry update costs.
+    Real const per_cell = chem_seconds / static_cast<Real>(ncells);
+    Real const per_substep = (total > 0.0) ? chem_seconds / total : 0.0;
     std::cout << "chemistry substeps: total=" << static_cast<std::uint64_t>(total)
               << " mean=" << total / static_cast<Real>(ncells)
               << " max=" << static_cast<std::uint64_t>(max)
               << " cells=" << ncells << std::endl;
+    std::cout << "chemistry kernel: seconds=" << chem_seconds
+              << " s_per_cell=" << per_cell
+              << " s_per_cell_substep=" << per_substep
+              << " cell_substeps_per_second="
+              << ((chem_seconds > 0.0) ? total / chem_seconds : 0.0) << std::endl;
   }
 }
 
