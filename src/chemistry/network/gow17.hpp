@@ -1680,20 +1680,57 @@ class GOW17Network {
     // through T, so the species phase skips it and reuses the coefficients
     // already sitting in k2body_.
     if (!species_only) {
-    constexpr Real k2Texp[n_2body_] = {
-        0.0,  -0.190, 0.0,    0.0, 0.0, -1.3, 0.0, 0.0,   -0.339, -0.5, -0.52,
-        0.0,  -0.64,  0.042,  0.0, 0.0, 0.0,  0.0, -0.52, 0.0,    0.26, 0.0,
-        -1.3, -0.62,  -0.190, 0.0, 0.0, 0.0,  0.0, 0.0,   0.0};
-    constexpr Real k2body_base[n_2body_] = {
-        1.00,    1.99e-9,  1.7e-9,    1.26e-13, 1.6e-9,        3.3e-13 * 0.7,
-        1.00,    7.0e-11,  7.95e-10,  1.0e-11,  4.54e-7,       1.00,
-        1.06e-5, 1.76e-9,  2.753e-14, 1.00,     1.00,          1.00,
-        8.46e-7, 7.20e-15, 2.81e-11,  3.5e-11,  3.3e-13 * 0.3, 1.46e-10,
-        1.99e-9, 1.00,     6.4e-10,   1.00,     1.00,          1.6e-9,
-        1.6e-9};
-    for (int i = 0; i < n_2body_; i++) {
-      k2body_[i] = k2body_base[i] * Kokkos::pow(T, k2Texp[i]) * n_H;
-    }
+    // Written out rather than looped over a coefficient array. Nineteen of the
+    // thirty-one temperature exponents are exactly zero, and a loop indexing
+    // k2Texp[i] hides that from the compiler: it emits pow(T, 0.0) nineteen
+    // times per evaluation. Spelled out, those fold away, T^-0.5 becomes a
+    // sqrt, and the six exponents that repeat are computed once. Thirty-one
+    // pow calls become eight.
+    //
+    // The base coefficients and exponents are the same numbers as before, in
+    // the same order; entries whose base is 1.00 are placeholders that the
+    // special-treatment block below overwrites.
+    const Real Tm0190 = Kokkos::pow(T, -0.190);
+    const Real Tm13 = Kokkos::pow(T, -1.3);
+    const Real Tm052 = Kokkos::pow(T, -0.52);
+    const Real Tm0339 = Kokkos::pow(T, -0.339);
+    const Real Tm064 = Kokkos::pow(T, -0.64);
+    const Real Tp0042 = Kokkos::pow(T, 0.042);
+    const Real Tp026 = Kokkos::pow(T, 0.26);
+    const Real Tm062 = Kokkos::pow(T, -0.62);
+    const Real rsqrtT = 1.0 / Kokkos::sqrt(T);
+
+    k2body_[0] = n_H;                                  // 1.00,   T^0
+    k2body_[1] = 1.99e-9 * Tm0190 * n_H;               //         T^-0.190
+    k2body_[2] = 1.7e-9 * n_H;                         //         T^0
+    k2body_[3] = 1.26e-13 * n_H;                       //         T^0
+    k2body_[4] = 1.6e-9 * n_H;                         //         T^0
+    k2body_[5] = (3.3e-13 * 0.7) * Tm13 * n_H;         //         T^-1.3
+    k2body_[6] = n_H;                                  // 1.00,   T^0
+    k2body_[7] = 7.0e-11 * n_H;                        //         T^0
+    k2body_[8] = 7.95e-10 * Tm0339 * n_H;              //         T^-0.339
+    k2body_[9] = 1.0e-11 * rsqrtT * n_H;               //         T^-0.5
+    k2body_[10] = 4.54e-7 * Tm052 * n_H;               //         T^-0.52
+    k2body_[11] = n_H;                                 // 1.00,   T^0
+    k2body_[12] = 1.06e-5 * Tm064 * n_H;               //         T^-0.64
+    k2body_[13] = 1.76e-9 * Tp0042 * n_H;              //         T^0.042
+    k2body_[14] = 2.753e-14 * n_H;                     //         T^0
+    k2body_[15] = n_H;                                 // 1.00,   T^0
+    k2body_[16] = n_H;                                 // 1.00,   T^0
+    k2body_[17] = n_H;                                 // 1.00,   T^0
+    k2body_[18] = 8.46e-7 * Tm052 * n_H;               //         T^-0.52
+    k2body_[19] = 7.20e-15 * n_H;                      //         T^0
+    k2body_[20] = 2.81e-11 * Tp026 * n_H;              //         T^0.26
+    k2body_[21] = 3.5e-11 * n_H;                       //         T^0
+    k2body_[22] = (3.3e-13 * 0.3) * Tm13 * n_H;        //         T^-1.3
+    k2body_[23] = 1.46e-10 * Tm062 * n_H;              //         T^-0.62
+    k2body_[24] = 1.99e-9 * Tm0190 * n_H;              //         T^-0.190
+    k2body_[25] = n_H;                                 // 1.00,   T^0
+    k2body_[26] = 6.4e-10 * n_H;                       //         T^0
+    k2body_[27] = n_H;                                 // 1.00,   T^0
+    k2body_[28] = n_H;                                 // 1.00,   T^0
+    k2body_[29] = 1.6e-9 * n_H;                        //         T^0
+    k2body_[30] = 1.6e-9 * n_H;                        //         T^0
 
     // Special treatment of rates for some equations
     // (0) H3+ + *C -> CH + H2         --Vissapragada2016 new rates

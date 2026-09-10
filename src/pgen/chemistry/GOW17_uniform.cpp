@@ -87,15 +87,51 @@ void ProblemGenerator::GOW17Uniform(ParameterInput* pin, const bool restart) {
   // Assign values
   const int chem_start =
       chemistry_on ? pmbp->pchemistry->get_chemistry_scalars_first_idx() : 0;
+
+  // Optional density spread, in dex about n_H. With the default 0 every cell
+  // is identical, which is what makes 4^3 a legitimate accuracy mesh -- but it
+  // also makes the substep count identical in every cell, so the problem cannot
+  // exhibit warp divergence and every cost measured on it is a divergence-free
+  // best case. A non-zero spread ramps n_H log-uniformly along x1, so cells
+  // within a warp differ and the adaptive controller has to disagree with
+  // itself across a warp, as it would on a real mesh.
+  const Real n_H_spread_dex =
+      pin->GetOrAddReal("problem", "n_H_spread_dex", 0.0);
+  auto &size = pmbp->pmb->mb_size;
+  const Real x1min = pmy_mesh_->mesh_size.x1min;
+  const Real x1max = pmy_mesh_->mesh_size.x1max;
+  const Real mu_H_l = chemistry_on ? pmbp->pchemistry->mu_H
+                                   : pin->GetOrAddReal("problem", "mu_H", 1.4);
+  const Real mH = pmbp->punit->hydrogen_mass_cgs;
+  const Real dens_cgs = pmbp->punit->density_cgs();
+  const Real gm1 = pmbp->phydro->peos->eos_data.gamma - 1.0;
+  const Real cs2 = SQR(iso_cs);
+  const int nx1_l = indcs.nx1;
+  const int is_l = is;
+
   par_for(
       "pgen_GOW17_hydro", DevExeSpace(), 0, (pmbp->nmb_thispack - 1), ks, ke,
       js, je, is, ie, KOKKOS_LAMBDA(int m, int k, int j, int i) {
+        Real dens = hydro.d;
+        Real eint = hydro.e;
+        if (n_H_spread_dex != 0.0) {
+          Real &x1minmb = size.d_view(m).x1min;
+          Real &x1maxmb = size.d_view(m).x1max;
+          const Real x1 = CellCenterX(i - is_l, nx1_l, x1minmb, x1maxmb);
+          // -1 at x1min, +1 at x1max, so the spread is symmetric about n_H
+          const Real f = (x1max > x1min)
+                             ? (2.0 * (x1 - x1min) / (x1max - x1min) - 1.0)
+                             : 0.0;
+          const Real n_H_cell = n_H * Kokkos::pow(10.0, n_H_spread_dex * f);
+          dens = n_H_cell * mH * mu_H_l / dens_cgs;
+          eint = n_H_cell * cs2 / gm1;
+        }
         // Assign hydro values to this cell
-        w0(m, IDN, k, j, i) = hydro.d;
+        w0(m, IDN, k, j, i) = dens;
         w0(m, IVX, k, j, i) = hydro.vx;
         w0(m, IVY, k, j, i) = hydro.vy;
         w0(m, IVZ, k, j, i) = hydro.vz;
-        w0(m, IEN, k, j, i) = hydro.e;
+        w0(m, IEN, k, j, i) = eint;
 
         // Assign chemistry values to this cell
         if (chemistry_on) {
