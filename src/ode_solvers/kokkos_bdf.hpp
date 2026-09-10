@@ -24,6 +24,11 @@ struct KokkosBDFSettings {
   /// (near-equilibrium) regime, needlessly slowing every step, yet still too
   /// large to cure the ill-conditioned first-cycle solve for stiff networks.
   Real first_step_frac;
+  /// Absolute and relative error tolerances for the BDF error test and the
+  /// Newton convergence norm. Loosening them is the main control over how many
+  /// internal steps a macro-step costs.
+  Real atol;
+  Real rtol;
 };
 
 /*!
@@ -36,9 +41,9 @@ struct KokkosBDFSettings {
  * macro-step that quietly subcycles a thousand times is not comparable to a
  * single hydro update.
  *
- * Upstream hard codes atol = 1e-6, rtol = 1e-3, so those are reproduced here
- * rather than made settable; changing them would change the answer, not just the
- * diagnostics.
+ * Upstream hard codes atol = 1e-6, rtol = 1e-3. Here they are arguments, so the
+ * `<chemistry> kokkos_BDF_atol` and `kokkos_BDF_rtol` input keys reach the
+ * solver; passing the upstream values reproduces upstream exactly.
  *
  * Re-check this against upstream whenever the pinned Kokkos Kernels version in
  * the top level CMakeLists.txt changes. Transcribed from `d7509d69` on
@@ -52,8 +57,8 @@ template <class ode_type, class mat_type, class vec_type, class scalar_type>
 KOKKOS_FUNCTION KokkosODE::Experimental::ode_solver_status CountedBDFSolve(
     const ode_type& ode, const scalar_type t_start, const scalar_type t_end,
     const scalar_type initial_step, const scalar_type max_step,
-    const vec_type& y0, const vec_type& y_new, mat_type& temp, mat_type& temp2,
-    int& n_steps) {
+    const scalar_type atol, const scalar_type rtol, const vec_type& y0,
+    const vec_type& y_new, mat_type& temp, mat_type& temp2, int& n_steps) {
   using KAT = Kokkos::ArithTraits<scalar_type>;
   using ode_solver_status = KokkosODE::Experimental::ode_solver_status;
 
@@ -66,7 +71,6 @@ KOKKOS_FUNCTION KokkosODE::Experimental::ode_solver_status CountedBDFSolve(
   scalar_type t = t_start;
 
   constexpr int max_newton_iters = 10;
-  scalar_type atol = 1.0e-6, rtol = 1.0e-3;
 
   // Compute rhs = f(t_start, y0)
   ode.evaluate_function(t_start, 0, y0, rhs);
@@ -125,6 +129,8 @@ class KokkosBDF {
         t_end(t_start + dt),
         dt0(settings.first_step_frac * dt),
         max_step(dt),
+        atol(settings.atol),
+        rtol(settings.rtol),
         temp_(&temp_buffer_[0][0], ode_t::neqs, 23 + 2 * ode_t::neqs + 4),
         temp2_(&temp2_buffer_[0][0], 6, 7) {}
   KOKKOS_FUNCTION
@@ -144,6 +150,9 @@ class KokkosBDF {
   /// The maximum internal time step, set to the hydro step. Honoured by the
   /// pinned Kokkos Kernels; earlier versions discarded it (`(void)max_step;`).
   const Real max_step;
+  /// Error tolerances passed to the BDF error test and the Newton norm.
+  const Real atol;
+  const Real rtol;
   /// Number of internal BDF steps the last SolveODE() call took. Diagnostic
   /// only: per-cell chemistry cost scales with this.
   int n_substeps = 0;
@@ -161,15 +170,20 @@ class KokkosBDF {
     // Default 0 => dt0 = 0 => the solver auto-selects its first step. A fixed
     // fraction of the macro-step is a poor global control (too small in the
     // easy regime, too large in the stiff first cycle), so it is opt-in only.
+    // The defaults are the values Kokkos Kernels hard codes, so an input file
+    // that sets neither key reproduces upstream exactly.
     return KokkosBDFSettings{
-        pin->GetOrAddReal(module, "kokkos_BDF_first_step_frac", 0.0)};
+        pin->GetOrAddReal(module, "kokkos_BDF_first_step_frac", 0.0),
+        pin->GetOrAddReal(module, "kokkos_BDF_atol", 1.0e-6),
+        pin->GetOrAddReal(module, "kokkos_BDF_rtol", 1.0e-3)};
   }
 
   KOKKOS_FUNCTION
   void SolveODE() {
     auto const status =
-        CountedBDFSolve(ode_system, t_start, t_end, dt0, max_step, ode_system.y,
-                        ode_system.y_new, temp_, temp2_, n_substeps);
+        CountedBDFSolve(ode_system, t_start, t_end, dt0, max_step, atol, rtol,
+                        ode_system.y, ode_system.y_new, temp_, temp2_,
+                        n_substeps);
 
     // Note that this may not trigger an MPI_Abort, instead just aborting a
     // single rank. If that becomes a problem it can be replaced with a failure
