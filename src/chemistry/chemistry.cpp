@@ -61,6 +61,8 @@ Chemistry::Chemistry(MeshBlockPack* ppack, ParameterInput* pin)
     ode_solvers::ForwardEuler<H2Network>::GetSettings(pin, "chemistry");
   } else if (ode_solver == "kokkos_BDF") {
     ode_solvers::KokkosBDF<H2Network>::GetSettings(pin, "chemistry");
+  } else if (ode_solver == "semi_implicit_sweep") {
+    ode_solvers::SemiImplicitSweep<GOW17Network>::GetSettings(pin, "chemistry");
   }
 }
 

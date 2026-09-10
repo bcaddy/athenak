@@ -884,8 +884,17 @@ class GOW17Network {
    *              reached in the sweep still holds its start-of-substep value,
    *              which is what makes this Gauss-Seidel rather than Jacobi.
    * \param y_n   Start-of-substep state, the y^n of the backward-Euler formula
-   * \param g     Ghost species, held fixed across the substep
+   * \param g     Ghost species at the start of the substep. Taken by value: with
+   *              exact_ghosts set they are advanced as the sweep proceeds, so a
+   *              species updated later sees the reservoirs left by the ones
+   *              before it rather than their start-of-substep values.
    * \param h     Substep size
+   * \param exact_ghosts  Recompute the ghost species after each update. The
+   *              closure is linear with integer coefficients, so this is the
+   *              off-diagonal coupling carried exactly rather than frozen, for
+   *              about twenty flops per species against the reaction algebra's
+   *              several hundred. Without it the sweep is Gauss-Seidel in the
+   *              species and Jacobi in the reservoirs they share.
    * \param hep_first  Place He+ at the head of the sweep rather than after CO
    * \param h2_first   Update H2 at the head of the sweep rather than the tail
    * \param exact_map  Use the exponential map rather than backward Euler for
@@ -894,21 +903,31 @@ class GOW17Network {
    */
   template <class vec_type>
   KOKKOS_FUNCTION void OrderedSweepUpdate(const vec_type& y, const Real* y_n,
-                                          const GhostSpecies& g, const Real h,
+                                          GhostSpecies g, const Real h,
                                           const bool hep_first,
                                           const bool exact_map,
                                           const bool exact_block,
-                                          const bool h2_first) const {
+                                          const bool h2_first,
+                                          const bool exact_ghosts) const {
     const Real u = units_time_cgs;
+    // Recomputing rather than accumulating a delta keeps the fmax floors exact:
+    // a reservoir that has been driven to zero and is then replenished has to
+    // come back from the element budget, not from wherever a running sum left
+    // it. The rate coefficients that depend on the ghosts -- psi, the H2O+
+    // branching, the collisional density blend -- stay at their substep values;
+    // those are the expensive ones and refreshing them is a separate question.
+    auto refresh = [&]() { if (exact_ghosts) g = ComputeGhostSpecies_(y); };
 
     // ----- H2, early placement: every ion then reads a fresh H2 -----
     if (h2_first) {
       y[IH2] = StepH2_(y, y_n, g, h, exact_map);
+      refresh();
     }
 
     // ----- He+ : source-driven, feeds H+, C+, H2+, O+ -----
     if (hep_first) {
       y[IHE_plus] = HePlusStep_(y, y_n, g, h, exact_map);
+      refresh();
     }
 
     // ----- Si+ : isolated, couples only through the electron abundance -----
@@ -916,6 +935,7 @@ class GOW17Network {
       const Real c = kcr_[6] * g.Si + kph_[iph_Si] * g.Si;
       const Real d = k2body_[i2body_Sip_e] * g.e + kgr_[igr_Sip];
       y[ISi_plus] = BEStep_(y_n[ISi_plus], u * c, u * d, h, exact_map);
+      refresh();
     }
 
     // ----- H2+ : cr + H2, and He+ + H2 -----
@@ -925,6 +945,7 @@ class GOW17Network {
       const Real d = k2body_[i2body_H2p_H2] * y[IH2] +
                      k2body_[i2body_H2p_H] * g.H;
       y[IH2_plus] = BEStep_(y_n[IH2_plus], u * c, u * d, h, exact_map);
+      refresh();
     }
 
     // ----- H3+ : the downstream half of the H2+ chain -----
@@ -937,6 +958,7 @@ class GOW17Network {
                      k2body_[i2body_H3p_e_3H] * g.e +
                      k2body_[i2body_H3p_O_H2] * g.O;
       y[IH3_plus] = BEStep_(y_n[IH3_plus], u * c, u * d, h, exact_map);
+      refresh();
     }
 
     // ----- H+ : reads fresh He+ and H2+, lags O+ -----
@@ -949,6 +971,7 @@ class GOW17Network {
       const Real d = k2body_[i2body_Hp_e] * g.e +
                      k2body_[i2body_Hp_O] * g.O + kgr_[igr_Hp];
       y[IH_plus] = BEStep_(y_n[IH_plus], u * c, u * d, h, exact_map);
+      refresh();
     }
 
     // ----- O+ : reads fresh He+ and H+, lags OHx -----
@@ -959,6 +982,7 @@ class GOW17Network {
                      k2body_[i2body_Op_H2_OH] * y[IH2] +
                      k2body_[i2body_Op_H2] * y[IH2];
       y[IO_plus] = BEStep_(y_n[IO_plus], u * c, u * d, h, exact_map);
+      refresh();
     }
 
     // ----- C+ : reads fresh He+, lags CO and OHx -----
@@ -970,6 +994,7 @@ class GOW17Network {
                      k2body_[i2body_Cp_e] * g.e +
                      k2body_[i2body_Cp_H2_e] * y[IH2] + kgr_[igr_Cp];
       y[IC_plus] = BEStep_(y_n[IC_plus], u * c, u * d, h, exact_map);
+      refresh();
     }
 
     // ----- CHx : reads fresh H3+ and C+ -----
@@ -979,6 +1004,7 @@ class GOW17Network {
       const Real d = k2body_[i2body_CH_O] * g.O +
                      k2body_[i2body_CH_H] * g.H + kph_[iph_CHx];
       y[ICHx] = BEStep_(y_n[ICHx], u * c, u * d, h, exact_map);
+      refresh();
     }
 
     // ----- OHx : reads fresh H3+, O+, C+ and He+ -----
@@ -990,6 +1016,7 @@ class GOW17Network {
                      k2body_[i2body_OH_O] * g.O +
                      k2body_[i2body_Hep_OH] * y[IHE_plus] + kph_[iph_OHx];
       y[IOHx] = BEStep_(y_n[IOHx], u * c, u * d, h, exact_map);
+      refresh();
     }
 
     // ----- {CO, HCO+} : mutually creating, solved simultaneously -----
@@ -1069,16 +1096,21 @@ class GOW17Network {
         y[ICO] = Kokkos::fmax(hom_co + src_co, 0.0);
         y[IHCO_plus] = Kokkos::fmax(hom_hco + src_hco, 0.0);
       }
+      // Once for the pair: CO and HCO+ both debit the carbon and oxygen
+      // reservoirs, and the 2x2 solved them together.
+      refresh();
     }
 
     // ----- He+, late placement: reads fresh CO and OHx instead -----
     if (!hep_first) {
       y[IHE_plus] = HePlusStep_(y, y_n, g, h, exact_map);
+      refresh();
     }
 
     // ----- H2 -----
     if (!h2_first) {
       y[IH2] = StepH2_(y, y_n, g, h, exact_map);
+      refresh();
     }
   }
 

@@ -60,6 +60,11 @@ struct SweepSettings {
   /// Advance the CO/HCO+ pair with the 2x2 matrix exponential rather than
   /// the backward-Euler 2x2.
   bool sweep_exact_block;
+  /// Advance the ghost species as the sweep proceeds rather than holding them
+  /// at their start-of-substep values. The closure is linear with integer
+  /// coefficients, so this costs about twenty flops per species and makes the
+  /// sweep Gauss-Seidel in the shared reservoirs as well as in the species.
+  bool sweep_exact_ghosts;
   /// Update H2 at the head of the ordered sweep rather than the tail.
   bool sweep_h2_first;
   /// Use the adaptive controller paced by the network's nominated species
@@ -134,6 +139,7 @@ class SemiImplicitSweep {
         sweep_hep_first(settings.sweep_hep_first),
         sweep_exact_map(settings.sweep_exact_map),
         sweep_exact_block(settings.sweep_exact_block),
+        sweep_exact_ghosts(settings.sweep_exact_ghosts),
         sweep_h2_first(settings.sweep_h2_first),
         sweep_adaptive(settings.sweep_adaptive),
         sweep_nbad_max(settings.sweep_nbad_max),
@@ -174,6 +180,8 @@ class SemiImplicitSweep {
   const bool sweep_exact_map;
   /// Whether the CO/HCO+ pair uses the 2x2 matrix exponential
   const bool sweep_exact_block;
+  /// Whether the ghost species are advanced during the sweep
+  const bool sweep_exact_ghosts;
   /// Whether H2 heads the ordered sweep
   const bool sweep_h2_first;
   /// Whether the substep size is chosen adaptively, tigris-style
@@ -218,6 +226,8 @@ class SemiImplicitSweep {
         pin->GetOrAddBoolean(module, "sweep_exact_map", false);
     settings.sweep_exact_block =
         pin->GetOrAddBoolean(module, "sweep_exact_block", false);
+    settings.sweep_exact_ghosts =
+        pin->GetOrAddBoolean(module, "sweep_exact_ghosts", false);
     settings.sweep_h2_first =
         pin->GetOrAddBoolean(module, "sweep_h2_first", false);
     settings.sweep_adaptive =
@@ -292,7 +302,8 @@ class SemiImplicitSweep {
         if (sweep_ordered) {
           ode_system.OrderedSweepUpdate(ode_system.y, y_old, ghosts, dt_sub,
                                         sweep_hep_first, sweep_exact_map,
-                                        sweep_exact_block, sweep_h2_first);
+                                        sweep_exact_block, sweep_h2_first,
+                                        sweep_exact_ghosts);
         } else {
           for (int n = 0; n < nspecies; ++n) {
             ode_system.y(n) = (y_old[n] + rates.creation(n) * dt_sub) /
