@@ -60,9 +60,8 @@ class KokkosBDF {
   const Real t_end;
   /// First time step size, if zero then the solver will decide
   const Real dt0;
-  /// The maximum time step, as of Kokkos Kernels 4.4 this is not implemented so
-  /// it does nothing
-  const Real max_step;
+  /// The maximum time step, if it's zero then the solver will decide
+  const Real max_step=0.0;
 
   /*!
    * \brief Get the settings for the  ODE solver from the input file
