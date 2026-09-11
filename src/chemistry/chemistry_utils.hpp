@@ -8,6 +8,8 @@
 //! \file chemistry_utils.hpp
 //  \brief utilities for chemistry
 
+#include <Kokkos_ArithTraits.hpp>
+
 #include "athena.hpp"
 #include "utils/register_array.hpp"
 

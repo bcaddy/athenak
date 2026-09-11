@@ -29,6 +29,7 @@ add_executable(
 
         chemistry/chemistry_tasks.cpp
         chemistry/chemistry.cpp
+        chemistry/thermo/thermo_table.cpp
 
         coordinates/adm.cpp
         coordinates/coordinates.cpp

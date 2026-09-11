@@ -15,6 +15,7 @@
 #include <map>
 #include <string>
 #include <tuple>
+#include <type_traits>
 #include <vector>
 
 #include "athena.hpp"
@@ -56,6 +57,9 @@ Chemistry::Chemistry(MeshBlockPack* ppack, ParameterInput* pin)
     H2Network::GetSettings(pin, pmy_pack);
   } else if (network == "GOW17") {
     GOW17Network::GetSettings(pin, pmy_pack);
+    if (pin->GetOrAddBoolean("chemistry", "GOW17_thermo_table", false)) {
+      BuildThermoTable(thermo_table);
+    }
   }
   if (ode_solver == "forward_euler") {
     ode_solvers::ForwardEuler<H2Network>::GetSettings(pin, "chemistry");
@@ -113,7 +117,10 @@ void Chemistry::UpdateChemistry() {
   static auto const network_settings_cached =
       Network_t::GetSettings(my_pin, pmy_pack);
   auto const ode_settings = ode_settings_cached;
-  auto const network_settings = network_settings_cached;
+  auto network_settings = network_settings_cached;
+  if constexpr (std::is_same_v<Network_t, GOW17Network>) {
+    network_settings.thermo_table = thermo_table;
+  }
 
   // ----- Get all the loop limits and generate the parallel policy ------
   // NOLINTNEXTLINE(whitespace/braces)

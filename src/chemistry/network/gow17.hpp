@@ -13,10 +13,18 @@
 #include "athena.hpp"
 #include "chemistry/chemistry_utils.hpp"
 #include "chemistry/thermo/thermo.hpp"
+#include "chemistry/thermo/thermo_table.hpp"
 #include "utils/register_array.hpp"
 
 namespace chemistry {
 struct GOW17Settings {
+  /// Read the CI, OI, CII, Lyman-alpha and H2-heating temperature coefficients
+  /// from a lookup table rather than evaluating their fits. The table is built
+  /// once, in GetSettings, whose result Chemistry caches in a static.
+  bool use_thermo_table;
+  /// The table itself. A View, so copying the settings into the kernel copies a
+  /// descriptor rather than the data.
+  ThermoTable thermo_table;
   /// If we're using an isothermal equation of state
   bool isothermal;
   /// The temperature to use for an isothermal EOS
@@ -92,6 +100,8 @@ class GOW17Network {
         units_time_cgs(units_time_cgs),
         units_energy_density_cgs(units_energy_density_cgs),
         isothermal(settings.isothermal),
+        use_thermo_table(settings.use_thermo_table),
+        thermo_table(settings.thermo_table),
         zd(settings.zd),
         xHe(settings.xHe),
         xC(settings.xC),
@@ -119,6 +129,36 @@ class GOW17Network {
 
   /// If the network is using an isothermal equation of state
   const bool isothermal;
+
+  /// Whether the fine-structure, Lyman-alpha and H2-heating temperature
+  /// coefficients are read from the table rather than evaluated
+  const bool use_thermo_table;
+  /// The table itself. A View, so this is a descriptor rather than the data.
+  const ThermoTable thermo_table;
+
+  /*!
+   * \brief Relative step a solver should use when differencing Edot in energy.
+   *
+   * \details With the table on, Edot is piecewise linear in T over cells of
+   * ThermoTable::dlogT. Inside a cell the interpolant is exactly linear, so any
+   * step that stays there returns the exact slope of the tabulated function and
+   * the only requirement is that the difference of the two evaluations not be
+   * cancellation noise. Half a cell is the largest such step. A sqrt(eps) step
+   * is ~1e-6 of a cell and gives noise.
+   *
+   * Without the table Edot is smooth, and sqrt(eps) is the usual balance of
+   * truncation against roundoff.
+   */
+  KOKKOS_INLINE_FUNCTION Real EnergyPerturbationScale() const {
+    if (use_thermo_table) {
+      // Half a cell in dex, converted to a relative step: a change of d dex is
+      // a factor 10^d, so dT/T = 10^d - 1 ~= d ln(10) for small d.
+      constexpr Real ln10 = 2.302585092994046;
+      constexpr Real half_cell_dex = 0.5 * ThermoTable::dlogT;
+      return half_cell_dex * ln10;
+    }
+    return Kokkos::sqrt(Kokkos::ArithTraits<Real>::epsilon());
+  }
 
   // ----- Views to store ODE state -----
   // The current state
@@ -293,6 +333,11 @@ class GOW17Network {
     output.length_cgs = ppack->punit->length_cgs();
     output.multi_d = ppack->pmesh->multi_d;
     output.three_d = ppack->pmesh->three_d;
+
+    // The table itself is owned by Chemistry and injected into this struct
+    // after the cached copy is taken; see Chemistry::UpdateChemistry.
+    output.use_thermo_table =
+        pin->GetOrAddBoolean("chemistry", "GOW17_thermo_table", false);
     return output;
   }
 
@@ -342,18 +387,73 @@ class GOW17Network {
       return 0;
     }
 
-    // C+ fine structure line
-    Real cooling =
-        Thermo::CoolingCII(y_in[IC_plus], n_H * ghosts.H, n_H * y_in[IH2],
-                           n_H * ghosts.e, T_capped);
-    // CI fine structure line
-    cooling += Thermo::CoolingCI(ghosts.C, n_H * ghosts.H, n_H * y_in[IH2],
-                                 n_H * ghosts.e, T_capped);
-    // OI fine structure line
-    cooling += Thermo::CoolingOI(ghosts.O, n_H * ghosts.H, n_H * y_in[IH2],
-                                 n_H * ghosts.e, T_capped);
-    // cooling of hot gas: radiative cooling, free-free.
-    cooling += Thermo::CoolingLya(ghosts.H, n_H * ghosts.e, T);
+    // One Locate serves all three fine-structure coolers.
+    const Real nHI = n_H * ghosts.H;
+    const Real nH2 = n_H * y_in[IH2];
+    const Real nel = n_H * ghosts.e;
+    Real cooling;
+    // Shared by every coefficient this function reads at T_capped. Lyman alpha
+    // is evaluated at the untruncated T and takes its own slot below.
+    const ThermoTable::Slot s = use_thermo_table
+                                    ? thermo_table.Locate(T_capped)
+                                    : ThermoTable::Slot{0, 0, 0.0};
+    if (use_thermo_table) {
+      cooling = Thermo::CoolingCIIFrom(
+          y_in[IC_plus], nHI, nH2, nel,
+          Thermo::CIICoefs{thermo_table.At(s, ThermoTable::ICII_k10e),
+                           thermo_table.At(s, ThermoTable::ICII_k10HI),
+                           thermo_table.At(s, ThermoTable::ICII_k10H2)},
+          thermo_table.At(s, ThermoTable::ICII_boltz));
+      cooling += Thermo::CoolingCIFrom(
+          ghosts.C, nHI, nH2, nel,
+          Thermo::CICoefs{thermo_table.At(s, ThermoTable::ICI_k10HI),
+                          thermo_table.At(s, ThermoTable::ICI_k20HI),
+                          thermo_table.At(s, ThermoTable::ICI_k21HI),
+                          thermo_table.At(s, ThermoTable::ICI_k10H2),
+                          thermo_table.At(s, ThermoTable::ICI_k20H2),
+                          thermo_table.At(s, ThermoTable::ICI_k21H2),
+                          thermo_table.At(s, ThermoTable::ICI_k10e),
+                          thermo_table.At(s, ThermoTable::ICI_k20e),
+                          thermo_table.At(s, ThermoTable::ICI_k21e)},
+          thermo_table.At(s, ThermoTable::ICI_boltz10),
+          thermo_table.At(s, ThermoTable::ICI_boltz20),
+          thermo_table.At(s, ThermoTable::ICI_boltz21));
+      cooling += Thermo::CoolingOIFrom(
+          ghosts.O, nHI, nH2, nel,
+          Thermo::OICoefs{thermo_table.At(s, ThermoTable::IOI_k10HI),
+                          thermo_table.At(s, ThermoTable::IOI_k20HI),
+                          thermo_table.At(s, ThermoTable::IOI_k21HI),
+                          thermo_table.At(s, ThermoTable::IOI_k10H2),
+                          thermo_table.At(s, ThermoTable::IOI_k20H2),
+                          thermo_table.At(s, ThermoTable::IOI_k21H2),
+                          thermo_table.At(s, ThermoTable::IOI_k10e),
+                          thermo_table.At(s, ThermoTable::IOI_k20e),
+                          thermo_table.At(s, ThermoTable::IOI_k21e)},
+          thermo_table.At(s, ThermoTable::IOI_boltz10),
+          thermo_table.At(s, ThermoTable::IOI_boltz20),
+          thermo_table.At(s, ThermoTable::IOI_boltz21));
+      // Lyman alpha is evaluated at the untruncated T, which runs to
+      // temperature_max_cooling_nm (1e9 K by default) and so past the top of
+      // the grid. Clamping there would freeze a coefficient that is still
+      // falling, so above the grid it stays analytic.
+      if (T < ThermoTable::T_max) {
+        const auto sl = thermo_table.Locate(T);
+        cooling += Thermo::CoolingLyaFrom(
+            ghosts.H, nel, thermo_table.At(sl, ThermoTable::ILYA_fac),
+            thermo_table.At(sl, ThermoTable::ILYA_k01));
+      } else {
+        cooling += Thermo::CoolingLya(ghosts.H, nel, T);
+      }
+    } else {
+      // C+ fine structure line
+      cooling = Thermo::CoolingCII(y_in[IC_plus], nHI, nH2, nel, T_capped);
+      // CI fine structure line
+      cooling += Thermo::CoolingCI(ghosts.C, nHI, nH2, nel, T_capped);
+      // OI fine structure line
+      cooling += Thermo::CoolingOI(ghosts.O, nHI, nH2, nel, T_capped);
+      // cooling of hot gas: radiative cooling, free-free.
+      cooling += Thermo::CoolingLya(ghosts.H, nel, T);
+    }
     //  CO rotational lines
     //  Calculate effective CO column density
     const Real vth = Kokkos::sqrt(2. * units::Units::k_boltzmann_cgs *
@@ -366,9 +466,21 @@ class GOW17Network {
                                   n_H * ghosts.e, T_capped, NCOeff);
     // H2 vibration and rotation lines
     if (H2_rovib_cooling) {
-      cooling += Thermo::CoolingH2(y_in[IH2], n_H * ghosts.H, n_H * y_in[IH2],
-                                   n_H * ghosts.He, n_H * y_in[IH_plus],
-                                   n_H * ghosts.e, T_capped);
+      if (use_thermo_table) {
+        cooling += Thermo::CoolingH2From(
+            y_in[IH2], n_H * ghosts.H, n_H * y_in[IH2], n_H * ghosts.He,
+            n_H * y_in[IH_plus], n_H * ghosts.e,
+            Thermo::H2CoolCoefs{thermo_table.At(s, ThermoTable::IH2C_LHI),
+                                thermo_table.At(s, ThermoTable::IH2C_LH2),
+                                thermo_table.At(s, ThermoTable::IH2C_LHe),
+                                thermo_table.At(s, ThermoTable::IH2C_LHplus),
+                                thermo_table.At(s, ThermoTable::IH2C_Le),
+                                thermo_table.At(s, ThermoTable::IH2C_LTE)});
+      } else {
+        cooling += Thermo::CoolingH2(y_in[IH2], n_H * ghosts.H, n_H * y_in[IH2],
+                                     n_H * ghosts.He, n_H * y_in[IH_plus],
+                                     n_H * ghosts.e, T_capped);
+      }
     }
     // dust thermo emission. Disabled because our simulation does not go to high
     // enough density (>~ 10^5 cm-3) for dust cooling to matter.
@@ -409,13 +521,22 @@ class GOW17Network {
     // photo electric effect on dust
     heating += Thermo::HeatingPE(rad_(irad_GPE), zd, T, n_H * ghosts.e);
 
-    // H2 formation on dust grains
+    // H2 formation on grains and H2 UV pumping share geff and the
+    // critical-density factor built from it.
     const Real k_xH2_photo = kph_[iph_H2];
-    heating += Thermo::HeatingH2gr(ghosts.H, y_in[IH2], n_H, T, kgr_[igr_H],
-                                   k_xH2_photo);
-
-    // H2 UV pumping
-    heating += Thermo::HeatingH2pump(ghosts.H, y_in[IH2], n_H, T, k_xH2_photo);
+    Thermo::H2GeffCoefs geff;
+    if (use_thermo_table) {
+      // One Locate for both: it carries the index and weight.
+      const auto s = thermo_table.Locate(T);
+      geff.geff_H = thermo_table.At(s, ThermoTable::IH2_geffH);
+      geff.geff_H2 = thermo_table.At(s, ThermoTable::IH2_geffH2);
+    } else {
+      geff = Thermo::H2GeffRates(T);
+    }
+    heating += Thermo::HeatingH2grFrom(ghosts.H, y_in[IH2], n_H, kgr_[igr_H],
+                                       k_xH2_photo, geff);
+    heating += Thermo::HeatingH2pumpFrom(ghosts.H, y_in[IH2], n_H, k_xH2_photo,
+                                         geff);
 
     // H2 Photodissociation
     heating += Thermo::HeatingH2diss(k_xH2_photo, y_in[IH2]);

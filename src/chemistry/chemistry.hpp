@@ -70,6 +70,12 @@ class Chemistry {
   DvceArray0D<Real> ode_substeps_total;
   DvceArray0D<Real> ode_substeps_max;
 
+  // Tabulated temperature-only thermodynamic coefficients, empty unless
+  // <chemistry> GOW17_thermo_table is set. Held here rather than in the cached
+  // network settings because those live in a function-local static, which is
+  // destroyed after Kokkos::finalize().
+  ThermoTable thermo_table;
+
   // ================
   // Member Functions
   // ================
