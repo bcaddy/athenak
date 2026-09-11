@@ -276,9 +276,14 @@ class SemiImplicitSweep {
         if (iter == 0) {
           const Real edot = ode_system.Edot(ode_system.y, ghosts);
           if (sweep_n_substep_fixed > 0) {
-            // NOLINTNEXTLINE(build/include_what_you_use)
-            dt_sub = Kokkos::min(dt / static_cast<Real>(sweep_n_substep_fixed),
-                                 dt_remaining);
+            // Divide the time that is left by the substeps that are left, so
+            // the last one lands exactly on t_end. Accumulating a precomputed
+            // dt/n instead leaves t_now an ulp short and buys a whole extra
+            // substep, and whether it does depends on the bits of dt.
+            const unsigned int n_left =
+                (icount < sweep_n_substep_fixed) ? sweep_n_substep_fixed - icount
+                                                 : 1u;
+            dt_sub = dt_remaining / static_cast<Real>(n_left);
           } else if (sweep_adaptive) {
             dt_sub = ChooseStepPaced_(rates, edot, dt_remaining);
           } else {
@@ -320,10 +325,11 @@ class SemiImplicitSweep {
       icount++;
       n_substeps = static_cast<int>(icount);
 
-      if (icount > sweep_n_substep_max) {
-        Kokkos::abort(
-            "The semi-implicit sweep ODE solver failed to reach the end of the "
-            "macro-step within the maximum number of substeps.\n");
+      // Cells that exhaust the budget are usually pathological states from an
+      // upstream Riemann solve, and on device an abort takes down the whole
+      // kernel for one of them. Leave the cell partially advanced instead.
+      if (icount >= sweep_n_substep_max) {
+        break;
       }
     }
   }
@@ -464,15 +470,19 @@ class SemiImplicitSweep {
     }
 
     // One-sided difference in the energy alone. The rate coefficients stay at
-    // the value SetupNextStep left them, which is what makes this cheap.
-    const Real perturbation =
-        Kokkos::sqrt(Kokkos::ArithTraits<Real>::epsilon()) *
-        Kokkos::max(Kokkos::abs(energy), sweep_yfloor);
+    // the value SetupNextStep left them, which is what makes this cheap. The
+    // network sets the step, because its size depends on whether Edot is smooth
+    // in T or piecewise linear from a table.
+    const Real perturbation = ode_system.EnergyPerturbationScale() *
+                              Kokkos::max(Kokkos::abs(energy), sweep_yfloor);
     ode_system.y(iie) = energy + perturbation;
     const Real edot_perturbed = ode_system.Edot(ode_system.y, ghosts);
+    // The realized step, which differs from the nominal one by the rounding of
+    // the addition above.
+    const Real dE = ode_system.y(iie) - energy;
     ode_system.y(iie) = energy;
 
-    const Real dedot_de = (edot_perturbed - edot) / perturbation;
+    const Real dedot_de = (edot_perturbed - edot) / dE;
     Real denominator = 1.0 - dt_sub * dedot_de;
     // NOLINTNEXTLINE(build/include_what_you_use)
     denominator = Kokkos::max(denominator, 0.1);
