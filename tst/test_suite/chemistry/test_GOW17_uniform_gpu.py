@@ -11,7 +11,6 @@ import pathlib
 import numpy as np
 
 ode_solvers = ["kokkos_BDF"]
-input_file = "inputs/GOW17_uniform_test.athinput"
 
 # These come from Athena++ at t=1e6. Equilibrium is reached somewhere around t=1e2 or 1e3
 # but we're running the test longer to let any potential small errors compound into
@@ -39,7 +38,7 @@ fiducial_data = {
 }
 
 
-def run_gow17_uniform(ode_solver, mpi=False):
+def run_gow17_uniform_big_step(ode_solver, mpi=False):
     """Run the GOW17 uniform state test and compare to the known good results from
     AthenaK. Parameterized over the different ODE solvers that work for this network. This
     function is called by both the CPU and GPU tests."""
@@ -58,6 +57,7 @@ def run_gow17_uniform(ode_solver, mpi=False):
             f"mesh/nx2={fiducial_size}",
             f"mesh/nx3={fiducial_size}",
         ]
+        input_file = "inputs/GOW17_uniform_test.athinput"
         results = RUN(input_file, cli_args)
         assert results, f"GOW17 uniform test run failed for {ode_solver} solver."
 
@@ -68,7 +68,7 @@ def run_gow17_uniform(ode_solver, mpi=False):
         # Load the data
         test_data = athena_read.tab(data_path)
 
-        for key in test_data.keys():
+        for key in test_data:
             if key in ["i", "x1v"]:
                 pass
             elif key == "time":
@@ -94,7 +94,145 @@ def run_gow17_uniform(ode_solver, mpi=False):
         testutils.cleanup()
 
 
+def run_gow17_uniform_time_series(ode_solver):
+    """Run the GOW17 uniform state test and run a regression test on the time series
+    results."""
+    try:
+        cli_args = [
+            f"chemistry/ode_solver={ode_solver}",
+        ]
+
+        # Run AthenaK
+        input_file = "inputs/GOW17_uniform_time_series.athinput"
+        results = testutils.run(input_file, cli_args)
+        assert results, (
+            f"GOW17 uniform time series test run failed for {ode_solver} solver."
+        )
+
+        # Get a list of all the files
+        data_path = pathlib.Path("./tab/")
+        files = sorted(data_path.glob("GOW17_uniform.hydro_w.*.tab"))
+
+        # Collect all the data into a single array for easy comparison
+        dataset_names = (
+            "dens",
+            "velx",
+            "vely",
+            "velz",
+            "eint",
+            "s_00_chem_He+",
+            "s_01_chem_OHx",
+            "s_02_chem_CHx",
+            "s_03_chem_CO",
+            "s_04_chem_C+",
+            "s_05_chem_HCO+",
+            "s_06_chem_H2",
+            "s_07_chem_H+",
+            "s_08_chem_H3+",
+            "s_09_chem_H2+",
+            "s_10_chem_O+",
+            "s_11_chem_Si+",
+        )
+        test_time_series = np.empty(
+            len(files), dtype=[(name, "f4") for name in dataset_names]
+        )
+
+        # Gather data
+        for i, f in enumerate(files):
+            data = athena_read.tab(f)
+            for name in dataset_names:
+                test_time_series[name][i] = data[name][0]
+
+        # Load the fiducial data
+        fiducial_time_series = np.load(
+            "../../test_suite/chemistry/data/gow17_time_series.npz"
+        )["time_series"]
+
+        # Compare all results
+        for name in dataset_names:
+            assert np.allclose(test_time_series[name], fiducial_time_series[name]), (
+                f"The {name} dataset contains incorrect value(s)."
+            )
+
+    finally:
+        testutils.cleanup()
+
+
+def run_gow17_cfl_dependence(ode_solver, mpi=False):
+    """Run the GOW17 uniform state test and check if the results depend on the CFL
+    number"""
+    if mpi:
+        RUN = testutils.mpi_run
+        fiducial_size = 12
+        fiducial_data["cycle"] = 80
+    else:
+        RUN = testutils.run
+        fiducial_size = 4
+
+    try:
+        cli_args = [
+            f"chemistry/ode_solver={ode_solver}",
+            f"mesh/nx1={fiducial_size}",
+            f"mesh/nx2={fiducial_size}",
+            f"mesh/nx3={fiducial_size}",
+            "mesh/x1min=-0.01",
+            "mesh/x1max=0.01",
+            "mesh/x2min=-0.01",
+            "mesh/x2max=0.01",
+            "mesh/x3min=-0.01",
+            "mesh/x3max=0.01",
+            "mesh/ix3_bc=outflow",
+            "mesh/ox3_bc=outflow",
+            "time/tlim=0.01",
+        ]
+        low_cfl = 0.01
+        high_cfl = 0.8
+        data_path = pathlib.Path("./tab/GOW17_uniform.hydro_w.00001.tab")
+
+        # Run for the low CFL number
+        input_file = "inputs/GOW17_uniform_test.athinput"
+        results = RUN(input_file, cli_args + [f"time/cfl_number={low_cfl}"])
+        assert results, (
+            f"GOW17 uniform test run failed for {ode_solver} solver and CFL = {low_cfl}"
+            " in CFL test."
+        )
+        low_cfl_data = athena_read.tab(data_path)
+
+        # Run for the high CFL number
+        results = RUN(input_file, cli_args + [f"time/cfl_number={high_cfl}"])
+        assert results, (
+            f"GOW17 uniform test run failed for {ode_solver} solver and CFL = {high_cfl}"
+            " in CFL test."
+        )
+        high_cfl_data = athena_read.tab(data_path)
+
+        # Now check for correct results
+        ignore_list = ("i", "x1v", "time", "cycle")
+        for key in low_cfl_data:
+            if key in ignore_list:
+                continue
+
+            # Tolerances set to account for the tolerances given to the ODE solver
+            assert np.allclose(
+                low_cfl_data[key], high_cfl_data[key], atol=5e-6, rtol=5e-3
+            ), f"The {key} datasets don't match with different CFL numbers"
+    finally:
+        testutils.cleanup()
+
+
 @pytest.mark.parametrize("ode_solver", ode_solvers)
 def test_gow17_uniform_gpu(ode_solver):
     """GPU Test for GOW17 uniform test problem."""
-    run_gow17_uniform(ode_solver)
+    run_gow17_uniform_big_step(ode_solver)
+
+
+@pytest.mark.parametrize("ode_solver", ode_solvers)
+def test_gow17_cfl_dependence_cpu(ode_solver):
+    """CPU Test for if the results of network depend on the CFL number"""
+    run_gow17_cfl_dependence(ode_solver)
+
+
+@pytest.mark.parametrize("ode_solver", ode_solvers)
+def test_gow17_uniform_time_series_cpu(ode_solver):
+    """CPU Test for GOW17 time series problem."""
+    run_gow17_uniform_time_series(ode_solver)
