@@ -133,6 +133,14 @@ class GOW17Network {
   /// no extra table lookup and no extra transcendental.
   enum class RowRead { kInterpolated, kLower, kUpper };
 
+  /// Which half of the heating and cooling sum to evaluate. kTabulated is the
+  /// part whose temperature dependence is entirely in the table, so it can be
+  /// re-evaluated at a second table row for the cost of arithmetic alone;
+  /// kRest is everything else, whose transcendentals must not be paid twice.
+  /// A template parameter rather than an argument so the unused half is
+  /// removed at compile time instead of branched over.
+  enum class EdotPart { kAll, kTabulated, kRest };
+
   static KOKKOS_INLINE_FUNCTION Real RowWeight(const RowRead row,
                                                const Real w_interpolated) {
     if (row == RowRead::kLower) {
@@ -400,12 +408,12 @@ class GOW17Network {
    * that this is a positive value so the energy update should look like `E =
    * HeatingTerm() - CoolingTerm();`
    */
-  template <class vec_type>
   /// \param row Which of the bracketing table rows to read the tabulated
   /// coefficients from. Calling twice at kLower and kUpper gives the cooling at
   /// the two temperatures the row pair straddles, which is how EdotAndDeriv
   /// obtains dEdot/dT without a second Locate or a second pass over the
   /// transcendentals.
+  template <class vec_type, EdotPart part = EdotPart::kAll>
   KOKKOS_FUNCTION Real CoolingTerm(const vec_type& y_in,
                                    const GhostSpecies& ghosts, Real T,
                                    const RowRead row = RowRead::kInterpolated)
@@ -423,14 +431,15 @@ class GOW17Network {
     const Real nHI = n_H * ghosts.H;
     const Real nH2 = n_H * y_in[IH2];
     const Real nel = n_H * ghosts.e;
-    Real cooling;
+    Real cooling = 0.0;
     // Shared by every coefficient this function reads at T_capped. Lyman alpha
     // is evaluated at the untruncated T and takes its own slot below.
     ThermoTable::Slot s = use_thermo_table ? thermo_table.Locate(T_capped)
                                            : ThermoTable::Slot{0, 0, 0.0};
     s.w = RowWeight(row, s.w);
+    if constexpr (part != EdotPart::kRest) {
     if (use_thermo_table) {
-      cooling = Thermo::CoolingCIIFrom(
+      cooling += Thermo::CoolingCIIFrom(
           y_in[IC_plus], nHI, nH2, nel,
           Thermo::CIICoefs{thermo_table.At(s, ThermoTable::ICII_k10e),
                            thermo_table.At(s, ThermoTable::ICII_k10HI),
@@ -479,7 +488,7 @@ class GOW17Network {
       }
     } else {
       // C+ fine structure line
-      cooling = Thermo::CoolingCII(y_in[IC_plus], nHI, nH2, nel, T_capped);
+      cooling += Thermo::CoolingCII(y_in[IC_plus], nHI, nH2, nel, T_capped);
       // CI fine structure line
       cooling += Thermo::CoolingCI(ghosts.C, nHI, nH2, nel, T_capped);
       // OI fine structure line
@@ -487,17 +496,21 @@ class GOW17Network {
       // cooling of hot gas: radiative cooling, free-free.
       cooling += Thermo::CoolingLya(ghosts.H, nel, T);
     }
-    //  CO rotational lines
-    //  Calculate effective CO column density
-    const Real vth = Kokkos::sqrt(2. * units::Units::k_boltzmann_cgs *
-                                  T_capped / units::Units::CO_mass_cgs);
-    const Real nCO = n_H * y_in[ICO];
-    const Real grad_small_ = vth / Leff_CO_max;
-    const Real gradeff = Kokkos::fmax(gradv_, grad_small_);
-    const Real NCOeff = nCO / gradeff;
-    cooling += Thermo::CoolingCOR(y_in[ICO], n_H * ghosts.H, n_H * y_in[IH2],
-                                  n_H * ghosts.e, T_capped, NCOeff);
+    }  // part != kRest
+    if constexpr (part != EdotPart::kTabulated) {
+      //  CO rotational lines
+      //  Calculate effective CO column density
+      const Real vth = Kokkos::sqrt(2. * units::Units::k_boltzmann_cgs *
+                                    T_capped / units::Units::CO_mass_cgs);
+      const Real nCO = n_H * y_in[ICO];
+      const Real grad_small_ = vth / Leff_CO_max;
+      const Real gradeff = Kokkos::fmax(gradv_, grad_small_);
+      const Real NCOeff = nCO / gradeff;
+      cooling += Thermo::CoolingCOR(y_in[ICO], n_H * ghosts.H, n_H * y_in[IH2],
+                                    n_H * ghosts.e, T_capped, NCOeff);
+    }
     // H2 vibration and rotation lines
+    if constexpr (part != EdotPart::kRest) {
     if (H2_rovib_cooling) {
       if (use_thermo_table) {
         cooling += Thermo::CoolingH2From(
@@ -515,17 +528,22 @@ class GOW17Network {
                                      n_H * ghosts.e, T_capped);
       }
     }
+    }  // part != kRest
     // dust thermo emission. Disabled because our simulation does not go to high
     // enough density (>~ 10^5 cm-3) for dust cooling to matter.
     // cooling += 0.;  // Thermo::CoolingDustTd(zd,  n_H, T, 10.);
 
-    // recombination of e on PAHs
-    cooling += Thermo::CoolingRec(zd, T_capped, n_H * ghosts.e, rad_(irad_GPE));
-    // collisional dissociation of H2
-    cooling += Thermo::CoolingH2diss(ghosts.H, y_in[IH2], k2body_[i2body_H2_H],
-                                     k2body_[i2body_H2_H2]);
-    // collisional ionization of HI
-    cooling += Thermo::CoolingHIion(ghosts.H, ghosts.e, k2body_[i2body_H_e]);
+    if constexpr (part != EdotPart::kTabulated) {
+      // recombination of e on PAHs
+      cooling +=
+          Thermo::CoolingRec(zd, T_capped, n_H * ghosts.e, rad_(irad_GPE));
+      // collisional dissociation of H2
+      cooling += Thermo::CoolingH2diss(ghosts.H, y_in[IH2],
+                                       k2body_[i2body_H2_H],
+                                       k2body_[i2body_H2_H2]);
+      // collisional ionization of HI
+      cooling += Thermo::CoolingHIion(ghosts.H, ghosts.e, k2body_[i2body_H_e]);
+    }
 
     return cooling;
   }
@@ -539,8 +557,8 @@ class GOW17Network {
    * \return Real The heating term, i.e. how much the energy increases. The
    * energy update should look like `E = HeatingTerm() - CoolingTerm();`
    */
-  template <class vec_type>
   /// \param row As in CoolingTerm: pins the table read to one bracketing row.
+  template <class vec_type, EdotPart part = EdotPart::kAll>
   KOKKOS_FUNCTION Real HeatingTerm(const vec_type& y_in,
                                    const GhostSpecies& ghosts, Real const& T,
                                    const RowRead row = RowRead::kInterpolated)
@@ -549,21 +567,25 @@ class GOW17Network {
       return 0.0;
     }
 
-    // Cosmic ray heating
-    Real heating =
-        Thermo::HeatingCRFrom(ghosts.e, ghosts.H, y_in[IH2], rad_(irad_CR),
-                              cr_heat_per_H2);
+    Real heating = 0.0;
+    if constexpr (part != EdotPart::kTabulated) {
+      // Cosmic ray heating
+      heating += Thermo::HeatingCRFrom(ghosts.e, ghosts.H, y_in[IH2],
+                                       rad_(irad_CR), cr_heat_per_H2);
 
-    // photo electric effect on dust
-    heating += Thermo::HeatingPE(rad_(irad_GPE), zd, T, n_H * ghosts.e);
+      // photo electric effect on dust
+      heating += Thermo::HeatingPE(rad_(irad_GPE), zd, T, n_H * ghosts.e);
+    }
 
+    if constexpr (part != EdotPart::kRest) {
     // H2 formation on grains and H2 UV pumping share geff and the
     // critical-density factor built from it.
     const Real k_xH2_photo = kph_[iph_H2];
     Thermo::H2GeffCoefs geff;
     if (use_thermo_table) {
       // One Locate for both: it carries the index and weight.
-      const auto s = thermo_table.Locate(T);
+      auto s = thermo_table.Locate(T);
+      s.w = RowWeight(row, s.w);
       geff.geff_H = thermo_table.At(s, ThermoTable::IH2_geffH);
       geff.geff_H2 = thermo_table.At(s, ThermoTable::IH2_geffH2);
     } else {
@@ -574,8 +596,11 @@ class GOW17Network {
     heating += Thermo::HeatingH2pumpFrom(ghosts.H, y_in[IH2], n_H, k_xH2_photo,
                                          geff);
 
-    // H2 Photodissociation
+    // H2 Photodissociation. No temperature dependence, so it may sit in either
+    // half: it cancels from the row difference and is counted once by the
+    // interpolation.
     heating += Thermo::HeatingH2diss(k_xH2_photo, y_in[IH2]);
+    }  // part != kRest
 
     return heating;
   }
@@ -647,10 +672,22 @@ class GOW17Network {
     }
 
     const Real fac = units_time_cgs * n_H / units_energy_density_cgs;
-    const Real e_lo = fac * (HeatingTerm(y_in, ghosts, T, RowRead::kLower) -
-                             CoolingTerm(y_in, ghosts, T, RowRead::kLower));
-    const Real e_hi = fac * (HeatingTerm(y_in, ghosts, T, RowRead::kUpper) -
-                             CoolingTerm(y_in, ghosts, T, RowRead::kUpper));
+    // The half that the table does not cover is evaluated once: its
+    // transcendentals would otherwise be paid twice for a contribution that
+    // cancels from the difference anyway.
+    const Real rest =
+        fac * (HeatingTerm<vec_type, EdotPart::kRest>(y_in, ghosts, T) -
+               CoolingTerm<vec_type, EdotPart::kRest>(y_in, ghosts, T));
+    const Real e_lo =
+        fac * (HeatingTerm<vec_type, EdotPart::kTabulated>(
+                   y_in, ghosts, T, RowRead::kLower) -
+               CoolingTerm<vec_type, EdotPart::kTabulated>(
+                   y_in, ghosts, T, RowRead::kLower));
+    const Real e_hi =
+        fac * (HeatingTerm<vec_type, EdotPart::kTabulated>(
+                   y_in, ghosts, T, RowRead::kUpper) -
+               CoolingTerm<vec_type, EdotPart::kTabulated>(
+                   y_in, ghosts, T, RowRead::kUpper));
 
     const auto s = thermo_table.Locate(Kokkos::fmin(T, temperature_max_cooling_nm));
     const Real T_lo = thermo_table.data(s.i0, ThermoTable::ITEMP);
@@ -662,7 +699,7 @@ class GOW17Network {
     if (dT > 0.0 && energy > 0.0 && T > temperature_min_rates) {
       dedot_de = ((e_hi - e_lo) / dT) * (T / energy);
     }
-    return e_lo + s.w * (e_hi - e_lo);
+    return rest + e_lo + s.w * (e_hi - e_lo);
   }
 
   /*!
