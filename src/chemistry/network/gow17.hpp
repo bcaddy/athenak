@@ -185,7 +185,8 @@ class GOW17Network {
   };
 
   /*!
-   * \brief Species that pace the adaptive substep, and how many there are.
+   * \brief Species whose chemical timescale limits the adaptive substep, and
+   * how many there are.
    *
    * \details The substep controller must not limit on every species. The trace
    * ions sit at 1e-12 and change by orders of magnitude while changing by almost
@@ -194,7 +195,7 @@ class GOW17Network {
    * already carries to their equilibrium C/D for free. Limiting on them would
    * discard the whole advantage of the method.
    *
-   * What should pace the step is the set of quantities that are genuinely
+   * What should limit the step is the set of quantities that are genuinely
    * integrated rather than quasi-steady, and that the calculation exists to
    * predict: H2 and CO, plus the internal energy (handled separately by the
    * solver, which always has it). This mirrors tigris limiting on x_H2, x_HII and
@@ -204,8 +205,9 @@ class GOW17Network {
    * Measured on the uniform test problem, this choice gives ~7 substeps at
    * t = 0.05 Myr, ~4 at 0.31 Myr and 1 near equilibrium, with no threshold knob.
    */
-  static constexpr int n_pacing = 2;
-  static KOKKOS_INLINE_FUNCTION constexpr int pacing_species(const int i) {
+  static constexpr int n_step_limiting_species = 2;
+  static KOKKOS_INLINE_FUNCTION constexpr int step_limiting_species(
+      const int i) {
     return (i == 0) ? static_cast<int>(IH2) : static_cast<int>(ICO);
   }
 

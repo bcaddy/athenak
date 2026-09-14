@@ -67,8 +67,8 @@ struct SweepSettings {
   bool sweep_exact_ghosts;
   /// Update H2 at the head of the ordered sweep rather than the tail.
   bool sweep_h2_first;
-  /// Use the adaptive controller paced by the network's nominated species
-  /// instead of a fixed substep count. See ChooseStepPaced_.
+  /// Limit the substep on the species the network nominates, instead of taking
+  /// a fixed substep count. See ChooseStepFromLimiters_.
   bool sweep_adaptive;
   /// Halve and retry a substep this many times when the energy update produces
   /// a non-physical state or moves T by more than 2*sweep_cfl.
@@ -285,7 +285,7 @@ class SemiImplicitSweep {
                                                  : 1u;
             dt_sub = dt_remaining / static_cast<Real>(n_left);
           } else if (sweep_adaptive) {
-            dt_sub = ChooseStepPaced_(rates, edot, dt_remaining);
+            dt_sub = ChooseStepFromLimiters_(rates, edot, dt_remaining);
           } else {
             dt_sub = ChooseStep_(rates, dt_remaining);
           }
@@ -336,7 +336,7 @@ class SemiImplicitSweep {
 
  private:
   /*!
-   * \brief Substep size paced by the network's slow, integrated species.
+   * \brief Substep size limited by the network's slow, integrated species.
    *
    * \details tigris (`photchem/ncr_solver.hpp`, DoOneSubstep) limits the substep
    * on a deliberately chosen handful of quantities -- x_HII, x_H2 and the net
@@ -353,8 +353,8 @@ class SemiImplicitSweep {
    * almost nothing in absolute terms, and an absolute criterion cannot see that.
    *
    * So the criterion is relative, and it is applied only to the species the
-   * network nominates through pacing_species(). Applying it to all of them would
-   * be paced by HCO+ and O+ at 1e-12, which the backward-Euler form already
+   * network nominates through step_limiting_species(). Applying it to all of
+   * them would be limited by HCO+ and O+ at 1e-12, which backward Euler already
    * carries to equilibrium exactly; that is the trap sweep_stiff_threshold exists
    * to work around in ChooseStep_, and choosing the right species removes the
    * need for the knob rather than papering over it.
@@ -368,8 +368,9 @@ class SemiImplicitSweep {
    * \return Real The substep size, never larger than dt_remaining
    */
   template <class rates_type>
-  KOKKOS_FUNCTION Real ChooseStepPaced_(const rates_type& rates, const Real edot,
-                                        const Real dt_remaining) const {
+  KOKKOS_FUNCTION Real ChooseStepFromLimiters_(const rates_type& rates,
+                                               const Real edot,
+                                               const Real dt_remaining) const {
     Real dt_sub = dt_remaining;
 
     const Real energy = ode_system.y(ode_t::IIE);
@@ -379,8 +380,8 @@ class SemiImplicitSweep {
                            sweep_cfl * energy / (Kokkos::abs(edot) + small));
     }
 
-    for (int p = 0; p < ode_t::n_pacing; ++p) {
-      const int n = ode_t::pacing_species(p);
+    for (int p = 0; p < ode_t::n_step_limiting_species; ++p) {
+      const int n = ode_t::step_limiting_species(p);
       const Real y_n = ode_system.y(n);
       const Real f_n = rates.creation(n) - y_n * rates.destruction(n);
       const Real scale = Kokkos::max(Kokkos::abs(y_n), sweep_yfloor);
