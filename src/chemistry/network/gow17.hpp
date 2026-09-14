@@ -96,6 +96,7 @@ class GOW17Network {
                                Real const units_energy_density_cgs)
       : n_H(w0(mb_idx, IDN, k, j, i) * density_cgs /
             (mu_H * hydrogen_mass_cgs)),
+        cr_heat_per_H2(Thermo::CRHeatPerH2(n_H)),
         gamma(gamma),
         units_time_cgs(units_time_cgs),
         units_energy_density_cgs(units_energy_density_cgs),
@@ -125,6 +126,24 @@ class GOW17Network {
         y_new(y_new_buffer_, neqs) {}
 
   // ----- Number of equations -----
+  /// Which of the two bracketing table rows a tabulated coefficient is read
+  /// from. The physical value interpolates between them; reading each row on
+  /// its own gives the same quantity evaluated at the two temperatures the pair
+  /// straddles, and differencing those is a temperature derivative that costs
+  /// no extra table lookup and no extra transcendental.
+  enum class RowRead { kInterpolated, kLower, kUpper };
+
+  static KOKKOS_INLINE_FUNCTION Real RowWeight(const RowRead row,
+                                               const Real w_interpolated) {
+    if (row == RowRead::kLower) {
+      return 0.0;
+    }
+    if (row == RowRead::kUpper) {
+      return 1.0;
+    }
+    return w_interpolated;
+  }
+
   static constexpr int neqs = 13;
 
   /// If the network is using an isothermal equation of state
@@ -229,6 +248,10 @@ class GOW17Network {
 
   // ----- cell values -----
   Real const n_H;  // The number density of hydrogen
+  /// Cosmic-ray heat per ionization in molecular gas. A function of n_H alone,
+  /// so it is fixed for the whole solve and computed once per cell rather than
+  /// on every evaluation of the heating.
+  Real const cr_heat_per_H2;
   Real const gamma;
 
   // ----- unit conversion factors -----
@@ -378,8 +401,15 @@ class GOW17Network {
    * HeatingTerm() - CoolingTerm();`
    */
   template <class vec_type>
+  /// \param row Which of the bracketing table rows to read the tabulated
+  /// coefficients from. Calling twice at kLower and kUpper gives the cooling at
+  /// the two temperatures the row pair straddles, which is how EdotAndDeriv
+  /// obtains dEdot/dT without a second Locate or a second pass over the
+  /// transcendentals.
   KOKKOS_FUNCTION Real CoolingTerm(const vec_type& y_in,
-                                   const GhostSpecies& ghosts, Real T) const {
+                                   const GhostSpecies& ghosts, Real T,
+                                   const RowRead row = RowRead::kInterpolated)
+      const {
     // Check that the temperature is below the maximum allowed for neutral
     // medium. If above then set it to T_max_NM
     Real const T_capped = Kokkos::fmin(T, temperature_max_cooling_nm);
@@ -396,9 +426,9 @@ class GOW17Network {
     Real cooling;
     // Shared by every coefficient this function reads at T_capped. Lyman alpha
     // is evaluated at the untruncated T and takes its own slot below.
-    const ThermoTable::Slot s = use_thermo_table
-                                    ? thermo_table.Locate(T_capped)
-                                    : ThermoTable::Slot{0, 0, 0.0};
+    ThermoTable::Slot s = use_thermo_table ? thermo_table.Locate(T_capped)
+                                           : ThermoTable::Slot{0, 0, 0.0};
+    s.w = RowWeight(row, s.w);
     if (use_thermo_table) {
       cooling = Thermo::CoolingCIIFrom(
           y_in[IC_plus], nHI, nH2, nel,
@@ -439,7 +469,8 @@ class GOW17Network {
       // the grid. Clamping there would freeze a coefficient that is still
       // falling, so above the grid it stays analytic.
       if (T < ThermoTable::T_max) {
-        const auto sl = thermo_table.Locate(T);
+        auto sl = thermo_table.Locate(T);
+        sl.w = RowWeight(row, sl.w);
         cooling += Thermo::CoolingLyaFrom(
             ghosts.H, nel, thermo_table.At(sl, ThermoTable::ILYA_fac),
             thermo_table.At(sl, ThermoTable::ILYA_k01));
@@ -509,16 +540,19 @@ class GOW17Network {
    * energy update should look like `E = HeatingTerm() - CoolingTerm();`
    */
   template <class vec_type>
+  /// \param row As in CoolingTerm: pins the table read to one bracketing row.
   KOKKOS_FUNCTION Real HeatingTerm(const vec_type& y_in,
-                                   const GhostSpecies& ghosts,
-                                   Real const& T) const {
+                                   const GhostSpecies& ghosts, Real const& T,
+                                   const RowRead row = RowRead::kInterpolated)
+      const {
     if (T > temperature_max_heating) {
       return 0.0;
     }
 
     // Cosmic ray heating
     Real heating =
-        Thermo::HeatingCr(ghosts.e, n_H, ghosts.H, y_in[IH2], rad_(irad_CR));
+        Thermo::HeatingCRFrom(ghosts.e, ghosts.H, y_in[IH2], rad_(irad_CR),
+                              cr_heat_per_H2);
 
     // photo electric effect on dust
     heating += Thermo::HeatingPE(rad_(irad_GPE), zd, T, n_H * ghosts.e);
@@ -571,6 +605,64 @@ class GOW17Network {
       // convert to code units
       return units_time_cgs * (dEdt * n_H / units_energy_density_cgs);
     }
+  }
+
+  /*!
+   * \brief Evaluate the internal energy equation and its temperature
+   * derivative together.
+   *
+   * \details The tabulated coefficients are read twice, once from each of the
+   * two rows that bracket T, giving the same rate at the two grid temperatures.
+   * Differencing them is a temperature derivative; interpolating them is the
+   * rate itself. Both rows are already loaded for the ordinary lookup, so
+   * neither the table index nor any transcendental is computed twice.
+   *
+   * Terms that are not tabulated see the same T in both calls, so they cancel
+   * in the difference and contribute nothing to the derivative. That is an
+   * approximation, and an acceptable one: the derivative only damps the
+   * implicit energy update, it does not set the state the update converges to.
+   *
+   * \param[out] dedot_de Derivative of the returned rate with respect to the
+   * internal energy, both in code units. Temperature is linear in the internal
+   * energy at fixed composition, so dT/de is just T/e.
+   * \return Real The net internal-energy rate, in code units.
+   */
+  template <class vec_type>
+  KOKKOS_FUNCTION Real EdotAndDeriv(const vec_type& y_in,
+                                    const GhostSpecies& ghosts,
+                                    Real& dedot_de) const {
+    dedot_de = 0.0;
+    if (isothermal) {
+      return 0.0;
+    }
+
+    const Real T = Temperature(y_in, ghosts);
+    static constexpr Real T_floor = 1.0;
+    if (T < T_floor) {
+      return 0.0;
+    }
+
+    if (!use_thermo_table) {
+      return Edot(y_in, ghosts);
+    }
+
+    const Real fac = units_time_cgs * n_H / units_energy_density_cgs;
+    const Real e_lo = fac * (HeatingTerm(y_in, ghosts, T, RowRead::kLower) -
+                             CoolingTerm(y_in, ghosts, T, RowRead::kLower));
+    const Real e_hi = fac * (HeatingTerm(y_in, ghosts, T, RowRead::kUpper) -
+                             CoolingTerm(y_in, ghosts, T, RowRead::kUpper));
+
+    const auto s = thermo_table.Locate(Kokkos::fmin(T, temperature_max_cooling_nm));
+    const Real T_lo = thermo_table.data(s.i0, ThermoTable::ITEMP);
+    const Real T_hi = thermo_table.data(s.i1, ThermoTable::ITEMP);
+    const Real dT = T_hi - T_lo;
+    const Real energy = y_in(IIE);
+    // dT/de = T/e, except where Temperature() clamped to its floor and the
+    // state no longer moves the temperature at all.
+    if (dT > 0.0 && energy > 0.0 && T > temperature_min_rates) {
+      dedot_de = ((e_hi - e_lo) / dT) * (T / energy);
+    }
+    return e_lo + s.w * (e_hi - e_lo);
   }
 
   /*!

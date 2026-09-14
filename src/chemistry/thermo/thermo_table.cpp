@@ -100,6 +100,8 @@ void BuildThermoTable(ThermoTable& tab) {
     h(i, ThermoTable::IH2C_LHplus) = kh2.LHplus;
     h(i, ThermoTable::IH2C_Le) = kh2.Le;
     h(i, ThermoTable::IH2C_LTE) = kh2.LTE;
+
+    h(i, ThermoTable::ITEMP) = T;
   }
 
   Kokkos::deep_copy(tab.data, h);

@@ -76,6 +76,10 @@ struct SweepSettings {
   /// Refresh the rate coefficients at the updated temperature before the
   /// species update, rather than letting the species see the pre-update T.
   bool sweep_refresh_rates;
+  /// Take dEdot/de by differencing the two thermodynamic table rows that
+  /// bracket T, rather than by perturbing the energy and evaluating Edot a
+  /// second time. Requires the table; ignored without it.
+  bool sweep_table_deriv;
 };
 
 /*!
@@ -143,7 +147,8 @@ class SemiImplicitSweep {
         sweep_h2_first(settings.sweep_h2_first),
         sweep_adaptive(settings.sweep_adaptive),
         sweep_nbad_max(settings.sweep_nbad_max),
-        sweep_refresh_rates(settings.sweep_refresh_rates) {}
+        sweep_refresh_rates(settings.sweep_refresh_rates),
+        sweep_table_deriv(settings.sweep_table_deriv) {}
   KOKKOS_FUNCTION
   ~SemiImplicitSweep() = default;
 
@@ -190,6 +195,8 @@ class SemiImplicitSweep {
   const int sweep_nbad_max;
   /// Whether rates are refreshed at the updated temperature mid-substep
   const bool sweep_refresh_rates;
+  /// Whether dEdot/de comes from differencing the table rows
+  const bool sweep_table_deriv;
   /// Number of internal steps the last SolveODE() call took. Diagnostic only:
   /// per-cell chemistry cost scales with this.
   int n_substeps = 0;
@@ -236,6 +243,8 @@ class SemiImplicitSweep {
         pin->GetOrAddInteger(module, "sweep_nbad_max", 3);
     settings.sweep_refresh_rates =
         pin->GetOrAddBoolean(module, "sweep_refresh_rates", false);
+    settings.sweep_table_deriv =
+        pin->GetOrAddBoolean(module, "sweep_table_deriv", false);
     return settings;
   }
 
@@ -274,7 +283,14 @@ class SemiImplicitSweep {
         const auto rates = ode_system.CDRates(ode_system.y, ghosts);
 
         if (iter == 0) {
-          const Real edot = ode_system.Edot(ode_system.y, ghosts);
+          // With the table derivative the rate and its slope come from the same
+          // pair of table rows, so this one call replaces both the rate
+          // evaluation and the perturbed one UpdateEnergy_ would otherwise do.
+          Real dedot_de = 0.0;
+          const Real edot =
+              sweep_table_deriv
+                  ? ode_system.EdotAndDeriv(ode_system.y, ghosts, dedot_de)
+                  : ode_system.Edot(ode_system.y, ghosts);
           if (sweep_n_substep_fixed > 0) {
             // Divide the time that is left by the substeps that are left, so
             // the last one lands exactly on t_end. Accumulating a precomputed
@@ -291,7 +307,7 @@ class SemiImplicitSweep {
           }
           // Internal energy, operator-split from the chemistry. Done here so
           // that the later iterations see the updated temperature.
-          UpdateEnergy_(ghosts, edot, dt_sub);
+          UpdateEnergy_(ghosts, edot, dt_sub, dedot_de);
 
           // The rate coefficients are strong functions of T, and the energy
           // update just changed it. tigris recomputes the chemical rates here
@@ -460,8 +476,11 @@ class SemiImplicitSweep {
    * \param dt_sub The substep size
    */
   template <class ghost_type>
+  /// \param dedot_de_in Already-computed dEdot/de, used when the caller
+  /// obtained it alongside edot from the table rows. Ignored otherwise.
   KOKKOS_FUNCTION void UpdateEnergy_(const ghost_type& ghosts, const Real edot,
-                                     const Real dt_sub) const {
+                                     const Real dt_sub,
+                                     const Real dedot_de_in) const {
     constexpr int iie = ode_t::IIE;
     const Real energy = ode_system.y(iie);
 
@@ -470,20 +489,26 @@ class SemiImplicitSweep {
       return;
     }
 
-    // One-sided difference in the energy alone. The rate coefficients stay at
-    // the value SetupNextStep left them, which is what makes this cheap. The
-    // network sets the step, because its size depends on whether Edot is smooth
-    // in T or piecewise linear from a table.
-    const Real perturbation = ode_system.EnergyPerturbationScale() *
-                              Kokkos::max(Kokkos::abs(energy), sweep_yfloor);
-    ode_system.y(iie) = energy + perturbation;
-    const Real edot_perturbed = ode_system.Edot(ode_system.y, ghosts);
-    // The realized step, which differs from the nominal one by the rounding of
-    // the addition above.
-    const Real dE = ode_system.y(iie) - energy;
-    ode_system.y(iie) = energy;
-
-    const Real dedot_de = (edot_perturbed - edot) / dE;
+    Real dedot_de;
+    if (sweep_table_deriv) {
+      // Already produced alongside edot, by differencing the two table rows
+      // that bracket T. Nothing to recompute here.
+      dedot_de = dedot_de_in;
+    } else {
+      // One-sided difference in the energy alone. The rate coefficients stay at
+      // the value SetupNextStep left them, which is what makes this cheap. The
+      // network sets the step, because its size depends on whether Edot is
+      // smooth in T or piecewise linear from a table.
+      const Real perturbation = ode_system.EnergyPerturbationScale() *
+                                Kokkos::max(Kokkos::abs(energy), sweep_yfloor);
+      ode_system.y(iie) = energy + perturbation;
+      const Real edot_perturbed = ode_system.Edot(ode_system.y, ghosts);
+      // The realized step, which differs from the nominal one by the rounding
+      // of the addition above.
+      const Real dE = ode_system.y(iie) - energy;
+      ode_system.y(iie) = energy;
+      dedot_de = (edot_perturbed - edot) / dE;
+    }
     Real denominator = 1.0 - dt_sub * dedot_de;
     // NOLINTNEXTLINE(build/include_what_you_use)
     denominator = Kokkos::max(denominator, 0.1);

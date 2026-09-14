@@ -55,6 +55,10 @@ struct ThermoTable {
     // H2 rovibrational line cooling: per-partner low-density coefficients and
     // the LTE rate
     IH2C_LHI, IH2C_LH2, IH2C_LHe, IH2C_LHplus, IH2C_Le, IH2C_LTE,
+    /// The grid temperature itself. Reading it from each bracketing row gives
+    /// the two temperatures a row pair straddles, which is the denominator of
+    /// a temperature derivative taken by differencing the rows.
+    ITEMP,
     NCOEF
   };
 

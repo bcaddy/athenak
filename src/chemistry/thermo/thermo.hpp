@@ -95,7 +95,53 @@ class Thermo {
    * \param crir_prim
    * \return Real cosmic ray heating in erg H^-1 s^-1
    */
-  KOKKOS_FUNCTION static Real HeatingCr(const Real xe, const Real nH,
+  /*!
+   * \brief Heat deposited per cosmic-ray ionization in molecular gas.
+   *
+   * \details Despotic paper Appendix B. A function of the hydrogen density
+   * alone, which is fixed for the whole solve, so callers that evaluate the
+   * heating repeatedly should compute this once and pass it to HeatingCRFrom
+   * rather than paying the logarithm on every evaluation.
+   *
+   * \param nH number density of H nuclei, cm^-3.
+   * \return Real Heat per ionization, in erg.
+   */
+  KOKKOS_FUNCTION static Real CRHeatPerH2(const Real nH) {
+    const Real lognH = Kokkos::log10(nH);
+    if (nH < 100.) {  // prevent log of small negative number
+      return 10. * eV_;
+    } else if (lognH < 4) {
+      return (10. + 3. * (lognH - 2.) / 2.) * eV_;
+    } else if (lognH < 7) {
+      return (13. + 4. * (lognH - 4.) / 3.) * eV_;
+    } else if (lognH < 10) {
+      return (17. + (lognH - 7.) / 3.) * eV_;
+    }
+    return 18. * eV_;
+  }
+
+  //-------------------------------------------------------------------------------------
+  /*!
+   * \brief Cosmic-ray heating, with the density-only factor supplied.
+   *
+   * \param qH2 Heat per ionization in molecular gas, from CRHeatPerH2(nH).
+   */
+  KOKKOS_FUNCTION static Real HeatingCRFrom(const Real xe, const Real xHI,
+                                            const Real xH2,
+                                            const Real crir_prim,
+                                            const Real qH2) {
+    // heating rate per ionization in atomic region, Draine ISM book eq (30.1)
+    Real qHI;
+    if (xe > 1.0e-9) {
+      qHI = (6.5 + 26.4 * Kokkos::sqrt(xe / (xe + 0.07))) * eV_;
+    } else {  // prevent sqrt of small negative number
+      qHI = 6.5 * eV_;
+    }
+    return crir_prim * (xHI * qHI + 2 * xH2 * qH2);
+  }
+
+  //-------------------------------------------------------------------------------------
+  KOKKOS_FUNCTION static Real HeatingCR(const Real xe, const Real nH,
                                         const Real xHI, const Real xH2,
                                         const Real crir_prim) {
     // heating for CR interaction with free electrons
