@@ -147,8 +147,9 @@ class KokkosBDF {
   const Real t_end;
   /// First time step size, if zero then the solver will decide
   const Real dt0;
-  /// The maximum internal time step, set to the hydro step. Honoured by the
-  /// pinned Kokkos Kernels; earlier versions discarded it (`(void)max_step;`).
+  /// The maximum internal time step; zero lets the solver decide. The
+  /// constructor sets it to the hydro step. Honoured by the pinned Kokkos
+  /// Kernels; earlier versions discarded it (`(void)max_step;`).
   const Real max_step;
   /// Error tolerances passed to the BDF error test and the Newton norm.
   const Real atol;
