@@ -97,6 +97,14 @@ void ProblemGenerator::GOW17Uniform(ParameterInput* pin, const bool restart) {
   // itself across a warp, as it would on a real mesh.
   const Real n_H_spread_dex =
       pin->GetOrAddReal("problem", "n_H_spread_dex", 0.0);
+  // Scatter the same set of densities across x1 instead of ramping them. The
+  // permutation below is a bijection on [0, nx1), so a shuffled run holds the
+  // identical multiset of cell densities as the ramp and does the identical
+  // total amount of chemical work; only the assignment of cells to warps
+  // changes. Cost differences between the two are therefore divergence alone.
+  const bool n_H_shuffle =
+      pin->GetOrAddBoolean("problem", "n_H_shuffle", false);
+  const int nx1_mesh = pmy_mesh_->mesh_indcs.nx1;
   auto &size = pmbp->pmb->mb_size;
   const Real x1min = pmy_mesh_->mesh_size.x1min;
   const Real x1max = pmy_mesh_->mesh_size.x1max;
@@ -119,9 +127,18 @@ void ProblemGenerator::GOW17Uniform(ParameterInput* pin, const bool restart) {
           Real &x1maxmb = size.d_view(m).x1max;
           const Real x1 = CellCenterX(i - is_l, nx1_l, x1minmb, x1maxmb);
           // -1 at x1min, +1 at x1max, so the spread is symmetric about n_H
-          const Real f = (x1max > x1min)
-                             ? (2.0 * (x1 - x1min) / (x1max - x1min) - 1.0)
-                             : 0.0;
+          Real f = (x1max > x1min)
+                       ? (2.0 * (x1 - x1min) / (x1max - x1min) - 1.0)
+                       : 0.0;
+          if (n_H_shuffle && nx1_mesh > 1) {
+            // Global x1 cell index, recovered from the cell centre.
+            const int ig = static_cast<int>(
+                (x1 - x1min) / ((x1max - x1min) / nx1_mesh));
+            // 37 is prime, so this is a bijection for any nx1 that is not a
+            // multiple of 37, and every density in the ramp appears once.
+            const int ip = (37 * ig + 11) % nx1_mesh;
+            f = 2.0 * static_cast<Real>(ip) / (nx1_mesh - 1) - 1.0;
+          }
           const Real n_H_cell = n_H * Kokkos::pow(10.0, n_H_spread_dex * f);
           dens = n_H_cell * mH * mu_H_l / dens_cgs;
           eint = n_H_cell * cs2 / gm1;
