@@ -76,6 +76,7 @@ class ProblemGenerator {
   void H2Advection(ParameterInput* pin, const bool restart);
   void H2Uniform(ParameterInput* pin, const bool restart);
   void GOW17Uniform(ParameterInput* pin, const bool restart);
+  void GOW17Turb(ParameterInput* pin, const bool restart);
   void SelfGravity(ParameterInput *pin, const bool restart);
   void BinaryGravity(ParameterInput *pin, const bool restart);
   void BECollapse(ParameterInput *pin, const bool restart);
