@@ -24,6 +24,12 @@ struct KokkosBDFSettings {
   /// (near-equilibrium) regime, needlessly slowing every step, yet still too
   /// large to cure the ill-conditioned first-cycle solve for stiff networks.
   Real first_step_frac;
+
+  /// The allowed relative tolerance passed to the ODE solver
+  Real rtol;
+
+  /// The allowed absolute tolerance passed to the ODE solver
+  Real atol;
 };
 
 /*!
@@ -44,6 +50,8 @@ class KokkosBDF {
         t_end(t_start + dt),
         dt0(settings.first_step_frac * dt),
         max_step(dt),
+        rtol(settings.rtol),
+        atol(settings.atol),
         temp_(&temp_buffer_[0][0], ode_t::neqs, 23 + 2 * ode_t::neqs + 4),
         temp2_(&temp2_buffer_[0][0], 6, 7) {}
   KOKKOS_FUNCTION
@@ -63,6 +71,10 @@ class KokkosBDF {
   /// The maximum time step, if it's zero then the solver will decide. The
   /// constructor sets it to dt
   const Real max_step;
+  /// The allowed relative tolerance passed to the ODE solver
+  const Real rtol;
+  /// The allowed absolute tolerance passed to the ODE solver
+  const Real atol;
 
   /*!
    * \brief Get the settings for the  ODE solver from the input file
@@ -78,14 +90,17 @@ class KokkosBDF {
     // fraction of the macro-step is a poor global control (too small in the
     // easy regime, too large in the stiff first cycle), so it is opt-in only.
     return KokkosBDFSettings{
-        pin->GetOrAddReal(module, "kokkos_BDF_first_step_frac", 0.0)};
+        pin->GetOrAddReal(module, "kokkos_BDF_first_step_frac", 0.0),
+        pin->GetOrAddReal(module, "kokkos_BDF_rtol", 1.0e-3),
+        pin->GetOrAddReal(module, "kokkos_BDF_atol", 1.0e-6),
+    };
   }
 
   KOKKOS_FUNCTION
   void SolveODE() {
     auto const status = KokkosODE::Experimental::BDFSolve(
         ode_system, t_start, t_end, dt0, max_step, ode_system.y,
-        ode_system.y_new, temp_, temp2_);
+        ode_system.y_new, temp_, temp2_, rtol, atol);
 
     // Note that this may not trigger an MPI_Abort, instead just aborting a
     // single rank. If that becomes a problem it can be replaced with a failure
