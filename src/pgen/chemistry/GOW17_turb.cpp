@@ -61,14 +61,14 @@ void ProblemGenerator::GOW17Turb(ParameterInput* pin, const bool restart) {
   const Real dens = n_H * pmbp->punit->hydrogen_mass_cgs * mu_H /
                     pmbp->punit->density_cgs();
 
-  // Internal energy per unit volume in code units. The initial particle count
-  // per H follows the initial abundances below; at T_init = 1e4 K the gas is
+  // Internal energy per unit volume in code units, e = n k T / (gamma - 1).
+  // The particle count per H follows the initial abundances; the gas starts
   // atomic, so 1.1 (H + He) is the right multiplier and the chemistry moves it
   // from there.
   const Real n_particle_per_H = 1.1;
   const Real kB = pmbp->punit->k_boltzmann_cgs;
   const Real gm1 = pmbp->phydro->peos->eos_data.gamma - 1.0;
-  const Real eint = 1.5 * n_H * n_particle_per_H * kB * T_init / gm1 /
+  const Real eint = n_H * n_particle_per_H * kB * T_init / gm1 /
                     pmbp->punit->pressure_cgs();
 
   DualArray1D<Real> initial_chemistry("initial_chemistry",
