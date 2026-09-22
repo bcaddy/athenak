@@ -123,11 +123,7 @@ void Chemistry::UpdateChemistry() {
   }
 
   // ----- Get all the loop limits and generate the parallel policy ------
-  // NOLINTNEXTLINE(whitespace/braces)
-  auto const [start_limit, end_limit] = LoopLimitsAllCells();
   int const species_start_idx = chemistry_scalars_first_idx;
-  auto const policy = Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
-      DevExeSpace(), start_limit, end_limit);
 
   // ----- ODE substep diagnostics -----
   // Captured by value into the kernel, so they have to be locals rather than
@@ -149,8 +145,12 @@ void Chemistry::UpdateChemistry() {
     chem_timer.reset();
   }
 
-  Kokkos::parallel_for(
-      "Chemistry_ODE_Solve", policy,
+  par_for(
+      "Chemistry_ODE_Solve", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1,
+      pmy_pack->pmesh->mb_indcs.ks, pmy_pack->pmesh->mb_indcs.ke,
+      pmy_pack->pmesh->mb_indcs.js, pmy_pack->pmesh->mb_indcs.je,
+      pmy_pack->pmesh->mb_indcs.is, pmy_pack->pmesh->mb_indcs.ie,
+
       KOKKOS_LAMBDA(const int& mb_idx, const int& k, const int& j,
                     const int& i) {
         // Create the chemisty object
@@ -174,7 +174,6 @@ void Chemistry::UpdateChemistry() {
 
         // ------ Solve the ODEs ------
         ODE_Solver_t ode_solver(ode_settings, chem_net, t_start, dt);
-        // ode_solvers::KokkosBDF solver(chem_net, t_start, dt);
         ode_solver.SolveODE();
 
         // How many internal steps that macro-step cost. One atomic pair per
@@ -203,11 +202,12 @@ void Chemistry::UpdateChemistry() {
     Real total = 0.0, max = 0.0;
     Kokkos::deep_copy(total, substeps_total);
     Kokkos::deep_copy(max, substeps_max);
-    // Cell count from the same limits the kernel used, ghost zones included.
-    std::uint64_t ncells = 1;
-    for (int n = 0; n < 4; ++n) {
-      ncells *= static_cast<std::uint64_t>(end_limit[n] - start_limit[n]);
-    }
+    // Cell count from the same limits the kernel used.
+    auto const &indcs = pmy_pack->pmesh->mb_indcs;
+    std::uint64_t const ncells =
+        static_cast<std::uint64_t>(pmy_pack->nmb_thispack) *
+        (indcs.ke - indcs.ks + 1) * (indcs.je - indcs.js + 1) *
+        (indcs.ie - indcs.is + 1);
     // Cost per cell-substep is the quantity that compares solvers: it divides
     // out both the cell count and however many substeps the controller chose,
     // leaving what one chemistry update costs.
@@ -326,34 +326,6 @@ int Chemistry::ComputeChemistryScalarsStartIndex() {
         "The chemistry module requires that either the hydro or MHD "
         "integrators be used and neither was requested in the input file.");
   }
-}
-
-/*!
- * \brief Returns loop limits for the chemistry solver to use with
- * MDRangePolicy.
- *
- * \return std::tuple<Kokkos::Array<int, 4>, Kokkos::Array<int, 4>> The start
- * and end limits in that order
- */
-std::tuple<Kokkos::Array<int, 4>, Kokkos::Array<int, 4>>
-Chemistry::LoopLimitsAllCells() {
-  // Set the start indices
-  Kokkos::Array<int, 4> const start = {
-      0,                             // meshblock start
-      pmy_pack->pmesh->mb_indcs.ks,  // k start
-      pmy_pack->pmesh->mb_indcs.js,  // j start
-      pmy_pack->pmesh->mb_indcs.is   // i start
-  };
-
-  // Check if the dimension is active and if it's not set the upper limit to 1
-  Kokkos::Array<int, 4> const end = {
-      pmy_pack->nmb_thispack,            // meshblock end
-      pmy_pack->pmesh->mb_indcs.ke + 1,  // k end
-      pmy_pack->pmesh->mb_indcs.je + 1,  // j end
-      pmy_pack->pmesh->mb_indcs.ie + 1   // i end
-  };
-
-  return {start, end};
 }
 
 }  // namespace chemistry

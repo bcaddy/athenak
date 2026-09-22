@@ -199,15 +199,6 @@ class Chemistry {
   DvceArray5D<Real> GetU0();
   DvceArray5D<Real> GetW0();
 
-  /*!
-   * \brief Get loop limits for looping over all the cells, this includes both
-   * real and ghost cells
-   *
-   * \return std::tuple<Kokkos::Array<int, 4>, Kokkos::Array<int, 4>> The
-   * MDRangePolicy start and end
-   */
-  std::tuple<Kokkos::Array<int, 4>, Kokkos::Array<int, 4>> LoopLimitsAllCells();
-
   // Functions for setting up
   int ComputeChemistryScalarsStartIndex();
 };

@@ -24,11 +24,12 @@ struct KokkosBDFSettings {
   /// (near-equilibrium) regime, needlessly slowing every step, yet still too
   /// large to cure the ill-conditioned first-cycle solve for stiff networks.
   Real first_step_frac;
-  /// Absolute and relative error tolerances for the BDF error test and the
-  /// Newton convergence norm. Loosening them is the main control over how many
-  /// internal steps a macro-step costs.
-  Real atol;
+
+  /// The allowed relative tolerance passed to the ODE solver
   Real rtol;
+
+  /// The allowed absolute tolerance passed to the ODE solver
+  Real atol;
 };
 
 /*!
@@ -41,12 +42,8 @@ struct KokkosBDFSettings {
  * macro-step that quietly subcycles a thousand times is not comparable to a
  * single hydro update.
  *
- * Upstream hard codes atol = 1e-6, rtol = 1e-3. Here they are arguments, so the
- * `<chemistry> kokkos_BDF_atol` and `kokkos_BDF_rtol` input keys reach the
- * solver; passing the upstream values reproduces upstream exactly.
- *
  * Re-check this against upstream whenever the pinned Kokkos Kernels version in
- * the top level CMakeLists.txt changes. Transcribed from `d7509d69` on
+ * the top level CMakeLists.txt changes. Transcribed from `a72d4df9` on
  * bcaddy/kokkos-kernels, where BDFStep takes max_step and returns a status, and
  * where a failed step restores y_new from y0 and stops rather than retrying.
  *
@@ -129,8 +126,8 @@ class KokkosBDF {
         t_end(t_start + dt),
         dt0(settings.first_step_frac * dt),
         max_step(dt),
-        atol(settings.atol),
         rtol(settings.rtol),
+        atol(settings.atol),
         temp_(&temp_buffer_[0][0], ode_t::neqs, 23 + 2 * ode_t::neqs + 4),
         temp2_(&temp2_buffer_[0][0], 6, 7) {}
   KOKKOS_FUNCTION
@@ -151,9 +148,10 @@ class KokkosBDF {
   /// constructor sets it to the hydro step. Honoured by the pinned Kokkos
   /// Kernels; earlier versions discarded it (`(void)max_step;`).
   const Real max_step;
-  /// Error tolerances passed to the BDF error test and the Newton norm.
-  const Real atol;
+  /// The allowed relative tolerance passed to the ODE solver
   const Real rtol;
+  /// The allowed absolute tolerance passed to the ODE solver
+  const Real atol;
   /// Number of internal BDF steps the last SolveODE() call took. Diagnostic
   /// only: per-cell chemistry cost scales with this.
   int n_substeps = 0;
@@ -171,12 +169,13 @@ class KokkosBDF {
     // Default 0 => dt0 = 0 => the solver auto-selects its first step. A fixed
     // fraction of the macro-step is a poor global control (too small in the
     // easy regime, too large in the stiff first cycle), so it is opt-in only.
-    // The defaults are the values Kokkos Kernels hard codes, so an input file
-    // that sets neither key reproduces upstream exactly.
+    // The defaults match BDFSolve's default arguments, so an input file that
+    // sets neither key reproduces upstream exactly.
     return KokkosBDFSettings{
         pin->GetOrAddReal(module, "kokkos_BDF_first_step_frac", 0.0),
+        pin->GetOrAddReal(module, "kokkos_BDF_rtol", 1.0e-3),
         pin->GetOrAddReal(module, "kokkos_BDF_atol", 1.0e-6),
-        pin->GetOrAddReal(module, "kokkos_BDF_rtol", 1.0e-3)};
+    };
   }
 
   KOKKOS_FUNCTION

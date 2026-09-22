@@ -30,11 +30,11 @@ The simple forward Euler solver uses the explicit first-order differentiation fo
 
 Runtime Parameters:
 
-| Option               | Type         | Default | Description                                        |
-| -------------------- | ------------ | ------- | -------------------------------------------------- |
-| fe_cfl               | Real         | 0.1     | cfl number for subcycling                          |
-| fe_n_subcycle_max    | unsigned int | 1e5     | maximum number of substeps                         |
-| fe_yfloor            | Real         | 1e-12   | y value floor for calculating subcycling timescale |
+| Option            | Type         | Default | Description                                        |
+| ----------------- | ------------ | ------- | -------------------------------------------------- |
+| fe_cfl            | Real         | 0.1     | cfl number for subcycling                          |
+| fe_n_subcycle_max | unsigned int | 1e5     | maximum number of substeps                         |
+| fe_yfloor         | Real         | 1e-12   | y value floor for calculating subcycling timescale |
 
 *`fe` stands for Forward Euler.*
 
@@ -44,9 +44,11 @@ The Kokkos BDF solver is a wrapper around the implicit [Backward Differentiation
 
 Runtime Parameters:
 
-| Option                     | Type   | Default | Description                                                                                                                                                                              |
-| -------------------------- | ------ | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| kokkos_BDF_first_step_frac | Real   | 0.0     | fraction of the hydro timestep to use for the solver's first internal step, i.e. `dt0 = kokkos_BDF_first_step_frac * dt`. The default value of 0.0 let's the solver decide the time step |
+| Option                     | Type | Default | Description                                                                                                                                                                              |
+| -------------------------- | ---- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| kokkos_BDF_rtol            | Real | 1.0e-3  | The allowed relative tolerance passed to the ODE solver                                                                                                                                  |
+| kokkos_BDF_atol            | Real | 1.0e-6  | The allowed absolute tolerance passed to the ODE solver                                                                                                                                  |
+| kokkos_BDF_first_step_frac | Real | 0.0     | fraction of the hydro timestep to use for the solver's first internal step, i.e. `dt0 = kokkos_BDF_first_step_frac * dt`. The default value of 0.0 let's the solver decide the time step |
 
 *Note: The Kokkos BDF solver also has a maximum internal step size, set to the hydro timestep `dt`. Kokkos Kernels ignored this argument through 4.4; the pinned version honours it.*
 
