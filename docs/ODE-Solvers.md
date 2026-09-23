@@ -54,9 +54,9 @@ Runtime Parameters:
 
 *Note: The pinned Kokkos Kernels build replaces the ODE Newton solver's `KokkosBatched::SerialGesv` static pivoting with LU and partial pivoting. Static pivoting's greedy row-to-column assignment fails spuriously ("`KokkosBatched::gesv: the currently implemented static pivoting failed.`") on well-conditioned sparse Jacobians like those of chemistry networks with an internal energy equation, whose dense energy row can steal a nearly-diagonal species row's only pivot column.*
 
-### Semi-Implicit Sweep
+### Semi-Implicit
 
-A synchronous semi-implicit backward-Euler sweep, following the closed-form update used by [Katz 2022](https://ui.adsabs.harvard.edu/abs/2022MNRAS.512..348K) in RAMSES-RTZ. For a network whose right-hand side has the form `f_i = C_i(y) - y_i * D_i(y)`, each substep applies
+A synchronous semi-implicit backward-Euler update, following the closed-form update used by [Katz 2022](https://ui.adsabs.harvard.edu/abs/2022MNRAS.512..348K) in RAMSES-RTZ. For a network whose right-hand side has the form `f_i = C_i(y) - y_i * D_i(y)`, each substep applies
 
 ```
 y_i <- (y_i + C_i * dt) / (1 + D_i * dt)
@@ -76,16 +76,16 @@ Runtime Parameters:
 
 | Option                | Type         | Default | Description                                                                                                                                              |
 | --------------------- | ------------ | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| sweep_cfl             | Real         | 0.1     | target fractional change per substep, applied only to the species that are being resolved                                                                |
-| sweep_yfloor          | Real         | 1e-12   | abundance floor used when forming the relative-change criterion                                                                                          |
-| sweep_n_substep_max   | unsigned int | 1e5     | maximum number of substeps per macro-step; exceeding it is fatal                                                                                         |
-| sweep_n_substep_fixed | unsigned int | 0       | if > 0, take exactly this many equal substeps and skip the adaptive controller. Every cell then does identical work, which removes warp divergence on GPU |
-| sweep_stiff_threshold | Real         | 1.0     | a species is treated as relaxation-dominated, and excluded from the step-size control, when `D_i * time_remaining` exceeds this                          |
-| sweep_n_iter          | unsigned int | 1       | fixed-point iterations of the species update per substep. Values above 1 help where fast species are mutually coupled, as in the CHx -> CO -> HCO+ cycle  |
-| sweep_energy_implicit | bool         | true    | damp the internal-energy update with a numerical `dEdot/dE`, costing one extra `Edot` evaluation per substep                                             |
-| sweep_renormalize     | bool         | true    | rescale each element back onto its conservation law after every substep                                                                                  |
+| semi_implicit_cfl             | Real         | 0.1     | target fractional change per substep, applied only to the species that are being resolved                                                                |
+| semi_implicit_yfloor          | Real         | 1e-12   | abundance floor used when forming the relative-change criterion                                                                                          |
+| semi_implicit_n_substep_max   | unsigned int | 1e5     | maximum number of substeps per macro-step; exceeding it is fatal                                                                                         |
+| semi_implicit_n_substep_fixed | unsigned int | 0       | if > 0, take exactly this many equal substeps and skip the adaptive controller. Every cell then does identical work, which removes warp divergence on GPU |
+| semi_implicit_stiff_threshold | Real         | 1.0     | a species is treated as relaxation-dominated, and excluded from the step-size control, when `D_i * time_remaining` exceeds this                          |
+| semi_implicit_n_iter          | unsigned int | 1       | fixed-point iterations of the species update per substep. Values above 1 help where fast species are mutually coupled, as in the CHx -> CO -> HCO+ cycle  |
+| semi_implicit_energy | bool         | true    | damp the internal-energy update with a numerical `dEdot/dE`, costing one extra `Edot` evaluation per substep                                             |
+| semi_implicit_renormalize     | bool         | true    | rescale each element back onto its conservation law after every substep                                                                                  |
 
-Beyond the common ODE system API below, this solver requires the network to provide `SetupNextStep`, `CDRates`, `Edot`, and — when `sweep_renormalize` is set — `RenormalizeElements`. Only `GOW17` implements these, so `semi_implicit_sweep` is registered for that network alone.
+Beyond the common ODE system API below, this solver requires the network to provide `SetupNextStep`, `CDRates`, `Edot`, and — when `semi_implicit_renormalize` is set — `RenormalizeElements`. Only `GOW17` implements these, so `semi_implicit` is registered for that network alone.
 
 ## Developer Documentation
 

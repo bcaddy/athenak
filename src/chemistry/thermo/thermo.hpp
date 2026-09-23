@@ -792,7 +792,6 @@ class Thermo {
    * only. Split out for the same reason as OIRates and CIRates.
    */
  public:
-
   static KOKKOS_INLINE_FUNCTION CIICoefs CIIRates(const Real T) {
     // Draine (2011) ISM book eq (17.16) and (17.17)
     const Real T2 = T / 100.;
@@ -826,7 +825,6 @@ class Thermo {
   }
 
  private:
-
   //----------------------------------------------------------------------------------------
   /*!
    * \brief line cooling rate per H for 2 level atom. Ignore radiative

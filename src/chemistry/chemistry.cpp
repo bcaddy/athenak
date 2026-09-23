@@ -65,8 +65,8 @@ Chemistry::Chemistry(MeshBlockPack* ppack, ParameterInput* pin)
     ode_solvers::ForwardEuler<H2Network>::GetSettings(pin, "chemistry");
   } else if (ode_solver == "kokkos_BDF") {
     ode_solvers::KokkosBDF<H2Network>::GetSettings(pin, "chemistry");
-  } else if (ode_solver == "semi_implicit_sweep") {
-    ode_solvers::SemiImplicitSweep<GOW17Network>::GetSettings(pin, "chemistry");
+  } else if (ode_solver == "semi_implicit") {
+    ode_solvers::SemiImplicit<GOW17Network>::GetSettings(pin, "chemistry");
   }
 }
 
@@ -233,10 +233,10 @@ template void
 Chemistry::UpdateChemistry<ode_solvers::ForwardEuler, GOW17Network>();
 template void
 Chemistry::UpdateChemistry<ode_solvers::KokkosBDF, GOW17Network>();
-// The semi-implicit sweep needs CDRates/Edot/RenormalizeElements, which only
+// The semi-implicit method needs CDRates/Edot/RenormalizeElements, which only
 // GOW17 provides, so it is not instantiated for H2.
 template void
-Chemistry::UpdateChemistry<ode_solvers::SemiImplicitSweep, GOW17Network>();
+Chemistry::UpdateChemistry<ode_solvers::SemiImplicit, GOW17Network>();
 
 /*!
  * \brief Return the name of the chemical species at scalar_idx

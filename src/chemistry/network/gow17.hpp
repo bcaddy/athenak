@@ -1000,7 +1000,7 @@ class GOW17Network {
    * The backward-Euler form (y^n + C h) / (1 + D h) is first order: right in
    * both limits -- forward Euler as D h -> 0, the equilibrium C/D as
    * D h -> infinity -- but only first-order accurate in between, which is what
-   * sets the error of the sweep as a whole.
+   * sets the error of the update as a whole.
    *
    * The exact form is the analytic solution of that frozen-coefficient problem,
    *
@@ -1035,13 +1035,13 @@ class GOW17Network {
   /*!
    * \brief He+ backward-Euler step.
    *
-   * \details Factored out because its position in the sweep is the one genuinely
+   * \details Factored out because its position in the update is the one genuinely
    * open ordering choice. Its creation is cosmic-ray ionization of neutral He
    * and depends on no other integrated species, and it feeds the creation terms
    * of H+, C+, H2+ and O+ -- so a source-first argument puts it at the head of
-   * the sweep. But its destruction reads CO and OHx, which are updated last, and
+   * the update. But its destruction reads CO and OHx, which are updated last, and
    * at high density the He+ + CO channel is not negligible against electron
-   * recombination. `sweep_hep_first` selects between the two placements.
+   * recombination. `semi_implicit_hep_first` selects between the two placements.
    */
   template <class vec_type>
   KOKKOS_FUNCTION Real HePlusStep_(const vec_type& y, const Real* y_n,
@@ -1060,7 +1060,7 @@ class GOW17Network {
   /*!
    * \brief H2 backward-Euler / exact step.
    *
-   * \details Its position in the sweep is the second open ordering choice, and
+   * \details Its position in the update is the second open ordering choice, and
    * a consequential one: H2 sets the destruction rate of most ions and appears
    * in the creation term of H2+, H3+, CHx and H+, so three of the network's six
    * mutually-creating pairs involve it -- more than any other species.
@@ -1069,7 +1069,7 @@ class GOW17Network {
    * once the gas is molecular. It is wrong during H2 formation: in the uniform
    * test problem x(H2) climbs from 1e-6 to 3.6e-2 inside 0.6 Myr, four and a
    * half orders of magnitude, making it among the fastest-changing quantities
-   * rather than the slowest. `sweep_h2_first` selects between the two.
+   * rather than the slowest. `semi_implicit_h2_first` selects between the two.
    */
   template <class vec_type>
   KOKKOS_FUNCTION Real StepH2_(const vec_type& y, const Real* y_n,
@@ -1099,9 +1099,9 @@ class GOW17Network {
   }
 
   /*!
-   * \brief One substep of the sweep with a hand-chosen species order.
+   * \brief One substep of the Gauss-Seidel update with a hand-chosen species order.
    *
-   * \details Replaces the index-order Jacobi loop with a Gauss-Seidel sweep
+   * \details Replaces the index-order Jacobi loop with a Gauss-Seidel update
    * ordered by the reaction graph, so that each species reads the updated value
    * of the species it is created from. The order is
    *
@@ -1109,7 +1109,7 @@ class GOW17Network {
    *
    * derived as follows. He+ is the only species whose creation term involves no
    * other integrated species (cosmic rays on neutral He) while feeding four of
-   * them, so it heads the sweep. Si+ is isolated -- creation from cosmic rays
+   * them, so it heads the update. Si+ is isolated -- creation from cosmic rays
    * and photons on neutral Si, destruction by electrons and grains -- and could
    * sit anywhere. H2+ then H3+ is the one clean chain in the network
    * (cr + H2 -> H2+, H2+ + H2 -> H3+). H+ and O+ follow because their creation
@@ -1133,11 +1133,11 @@ class GOW17Network {
    * Ghost species are evaluated once per substep by the caller and held fixed.
    *
    * \param y     Current state, read and written in place. A species not yet
-   *              reached in the sweep still holds its start-of-substep value,
+   *              reached in the update still holds its start-of-substep value,
    *              which is what makes this Gauss-Seidel rather than Jacobi.
    * \param y_n   Start-of-substep state, the y^n of the backward-Euler formula
    * \param g     Ghost species at the start of the substep. Taken by value: with
-   *              exact_ghosts set they are advanced as the sweep proceeds, so a
+   *              exact_ghosts set they are advanced as the update proceeds, so a
    *              species updated later sees the reservoirs left by the ones
    *              before it rather than their start-of-substep values.
    * \param h     Substep size
@@ -1145,22 +1145,22 @@ class GOW17Network {
    *              closure is linear with integer coefficients, so this is the
    *              off-diagonal coupling carried exactly rather than frozen, for
    *              about twenty flops per species against the reaction algebra's
-   *              several hundred. Without it the sweep is Gauss-Seidel in the
+   *              several hundred. Without it the update is Gauss-Seidel in the
    *              species and Jacobi in the reservoirs they share.
-   * \param hep_first  Place He+ at the head of the sweep rather than after CO
-   * \param h2_first   Update H2 at the head of the sweep rather than the tail
+   * \param hep_first  Place He+ at the head of the update rather than after CO
+   * \param h2_first   Update H2 at the head of the update rather than the tail
    * \param exact_map  Use the exponential map rather than backward Euler for
    *              the scalar species steps. The CO/HCO+ pair keeps its backward-
    *              Euler 2x2, whose exact analogue is a 2x2 matrix exponential.
    */
   template <class vec_type>
-  KOKKOS_FUNCTION void OrderedSweepUpdate(const vec_type& y, const Real* y_n,
-                                          GhostSpecies g, const Real h,
-                                          const bool hep_first,
-                                          const bool exact_map,
-                                          const bool exact_block,
-                                          const bool h2_first,
-                                          const bool exact_ghosts) const {
+  KOKKOS_FUNCTION void OrderedGaussSeidelUpdate(const vec_type& y, const Real* y_n,
+                                                GhostSpecies g, const Real h,
+                                                const bool hep_first,
+                                                const bool exact_map,
+                                                const bool exact_block,
+                                                const bool h2_first,
+                                                const bool exact_ghosts) const {
     const Real u = units_time_cgs;
     // Recomputing rather than accumulating a delta keeps the fmax floors exact:
     // a reservoir that has been driven to zero and is then replenished has to
@@ -1369,7 +1369,7 @@ class GOW17Network {
   /*!
    * \brief Rescale each element back onto its conservation law.
    *
-   * \details The semi-implicit sweep updates every species independently, so
+   * \details The semi-implicit method updates every species independently, so
    * nothing enforces the element budgets that ComputeGhostSpecies_ reads back
    * out. Left alone an overshoot is absorbed silently by the fmax(..., 0.0)
    * clamps there, and the element quietly stops being conserved. Any group
