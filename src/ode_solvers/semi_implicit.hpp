@@ -67,8 +67,9 @@ struct SemiImplicitSettings {
   bool semi_implicit_exact_ghosts;
   /// Update H2 at the head of the ordered Gauss-Seidel update rather than the tail.
   bool semi_implicit_h2_first;
-  /// Limit the substep on the species the network nominates, instead of taking
-  /// a fixed substep count. See ChooseStepFromLimiters_.
+  /// Limit the substep on the internal energy and on the species the network
+  /// nominates (ChooseStepFromLimiters_). When false, ChooseStep_ limits on the
+  /// non-stiff species only and leaves the energy step unbounded.
   bool semi_implicit_adaptive;
   /// Halve and retry a substep this many times when the energy update produces
   /// a non-physical state or moves T by more than 2*semi_implicit_cfl.
@@ -239,7 +240,7 @@ class SemiImplicit {
     settings.semi_implicit_h2_first =
         pin->GetOrAddBoolean(module, "semi_implicit_h2_first", false);
     settings.semi_implicit_adaptive =
-        pin->GetOrAddBoolean(module, "semi_implicit_adaptive", false);
+        pin->GetOrAddBoolean(module, "semi_implicit_adaptive", true);
     settings.semi_implicit_nbad_max =
         pin->GetOrAddInteger(module, "semi_implicit_nbad_max", 3);
     settings.semi_implicit_refresh_rates =
