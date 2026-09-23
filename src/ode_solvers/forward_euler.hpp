@@ -108,19 +108,17 @@ class ForwardEuler {
         dt_subcycle = Kokkos::reduction_identity<Real>::min();
         for (int i = 0; i < ode_system.neqs; i++) {
           // put floor in y for computing the timestep
-          Real const yf = Kokkos::max(ode_system.y(i), fe_yfloor);
+          Real const yf = Kokkos::fmax(ode_system.y(i), fe_yfloor);
 
           // Compute the value to reduce
-          // NOLINTNEXTLINE(build/include_what_you_use)
-          dt_subcycle = Kokkos::min(
+          dt_subcycle = Kokkos::fmin(
               dt_subcycle, Kokkos::abs(yf / (ode_system.y_new(i) + small)));
         }
         dt_subcycle = fe_cfl * dt_subcycle;
 
         // If t_now + dt_subcycle is greater than t_end then lower the
         // timestep accordingly
-        // NOLINTNEXTLINE(build/include_what_you_use)
-        dt_subcycle = Kokkos::min(dt_subcycle, t_end - t_now);
+        dt_subcycle = Kokkos::fmin(dt_subcycle, t_end - t_now);
       }
 
       // Advance one subcycle
