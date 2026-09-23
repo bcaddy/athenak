@@ -678,23 +678,25 @@ class GOW17Network {
    * \return GhostSpecies The ghost species abundances
    */
   template <class vec_type>
-  KOKKOS_FUNCTION GhostSpecies SetupNextStep(const vec_type& y_in) const {
+  KOKKOS_FUNCTION void SetupNextStep(const vec_type& y_in) const {
     // Set the ghost species
-    const GhostSpecies ghosts = ComputeGhostSpecies_(y_in);
+    ghosts_member = ComputeGhostSpecies_(y_in);
 
     // Compute rates
-    UpdateRates_(y_in, ghosts);
+    UpdateRates_(y_in, ghosts_member);
 
-    return ghosts;
+    // return ghosts;
   }
+
+  mutable GhostSpecies ghosts_member;
 
   /*!
    * \brief Computes `f` using the values in `y_in`
    */
   template <class vec_type1, class vec_type2>
   KOKKOS_FUNCTION void evaluate_function(const Real /*t*/, const Real /*dt*/,
-                                         const vec_type1& y_in,
-                                         vec_type2& f) const {
+                                         const vec_type1& y_in, vec_type2& f,
+                                         bool setup = true) const {
     RegisterArray<Real, neqs> y_floor;
     for (size_t i = 0; i < neqs; i++) {
       // Check if inf or NaN valued and throw abort if that's the case
@@ -707,13 +709,15 @@ class GOW17Network {
     }
 
     // ----- Setup for the next step -----
-    const auto ghosts = SetupNextStep(y_floor);
-
+    if (setup) {
+      SetupNextStep(y_floor);
+    }
+  
     // ----- Internal energy equation -----
-    f(IIE) = Edot(y_floor, ghosts);
+    f(IIE) = Edot(y_floor, ghosts_member);
 
     // ----- Creation & Destruction Rates -----
-    const auto rates = CDRates(y_floor, ghosts);
+    const auto rates = CDRates(y_floor, ghosts_member);
 
     // Compute the changes
     for (size_t i = 0; i < neqs - 1; i++) {

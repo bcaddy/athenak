@@ -137,7 +137,7 @@ KOKKOS_FUNCTION void numerical_jacobian(const network_t& network, const Real t,
     y_in(j) += perturbation;
 
     // Compute the perturbed values of fp
-    network.evaluate_function(t, dt, y_in, fp);
+    network.evaluate_function(t, dt, y_in, fp, false);
 
     // realized step, robust to rounding
     const Real inverse_diff = Real(1.0) / perturbation;
