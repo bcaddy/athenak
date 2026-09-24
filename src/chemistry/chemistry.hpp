@@ -60,6 +60,22 @@ class Chemistry {
   // Mean molecular weight per hydrogen atom
   Real const mu_H;
 
+  // ----- ODE substep diagnostics -----
+  // Set from <chemistry> report_substeps. Off by default: the counters cost an
+  // atomic per cell and the report costs a device-to-host copy every cycle.
+  bool const report_substeps;
+  // Total and maximum internal ODE steps over all cells in the last cycle.
+  // Real rather than int so the atomics and the copy back match the rest of the
+  // module; the counts are small enough to be exact in double.
+  DvceArray0D<Real> ode_substeps_total;
+  DvceArray0D<Real> ode_substeps_max;
+
+  // Tabulated temperature-only thermodynamic coefficients, empty unless
+  // <chemistry> GOW17_thermo_table is set. Held here rather than in the cached
+  // network settings because those live in a function-local static, which is
+  // destroyed after Kokkos::finalize().
+  ThermoTable thermo_table;
+
   // ================
   // Member Functions
   // ================
