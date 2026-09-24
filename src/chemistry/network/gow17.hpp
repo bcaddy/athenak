@@ -988,10 +988,6 @@ class GOW17Network {
     kcr_[4] *= 2 * y_in[IH2];
     kcr_[6] *= 2 * y_in[IH2];
     // 2 body reactions
-    constexpr Real k2Texp[n_2body_] = {
-        0.0,  -0.190, 0.0,    0.0, 0.0, -1.3, 0.0, 0.0,   -0.339, -0.5, -0.52,
-        0.0,  -0.64,  0.042,  0.0, 0.0, 0.0,  0.0, -0.52, 0.0,    0.26, 0.0,
-        -1.3, -0.62,  -0.190, 0.0, 0.0, 0.0,  0.0, 0.0,   0.0};
     constexpr Real k2body_base[n_2body_] = {
         1.00,    1.99e-9,  1.7e-9,    1.26e-13, 1.6e-9,        3.3e-13 * 0.7,
         1.00,    7.0e-11,  7.95e-10,  1.0e-11,  4.54e-7,       1.00,
@@ -999,8 +995,40 @@ class GOW17Network {
         8.46e-7, 7.20e-15, 2.81e-11,  3.5e-11,  3.3e-13 * 0.3, 1.46e-10,
         1.99e-9, 1.00,     6.4e-10,   1.00,     1.00,          1.6e-9,
         1.6e-9};
+    // The rate law is k2body_[i] = k2body_base[i] * T^exp[i] * n_H, with the
+    // exponent exp[i] of each reaction listed above. 19 of the 31 exponents are
+    // exactly zero, and pow(T, 0) == 1 for any T, so those reactions need no
+    // power of T at all. The remaining 12 reactions share just 9 distinct
+    // exponents, so evaluate each distinct power once instead of calling pow
+    // for every reaction. The multiplication is ordered as (base * T^exp) * n_H
+    // to match the original expression bit for bit.
     for (int i = 0; i < n_2body_; i++) {
-      k2body_[i] = k2body_base[i] * Kokkos::pow(T, k2Texp[i]) * n_H;
+      k2body_[i] = k2body_base[i];
+    }
+    // The nine distinct nonzero exponents, applied to their reactions.
+    const Real tp_m0190 = Kokkos::pow(T, -0.190);  // (1) (24)
+    const Real tp_m13 = Kokkos::pow(T, -1.3);      // (5) (22)
+    const Real tp_m0339 = Kokkos::pow(T, -0.339);  // (8)
+    const Real tp_m05 = Kokkos::pow(T, -0.5);      // (9)
+    const Real tp_m052 = Kokkos::pow(T, -0.52);    // (10) (18)
+    const Real tp_m064 = Kokkos::pow(T, -0.64);    // (12)
+    const Real tp_0042 = Kokkos::pow(T, 0.042);    // (13)
+    const Real tp_026 = Kokkos::pow(T, 0.26);      // (20)
+    const Real tp_m062 = Kokkos::pow(T, -0.62);    // (23)
+    k2body_[i2body_H3p_O] *= tp_m0190;
+    k2body_[i2body_H3p_O_H2] *= tp_m0190;
+    k2body_[i2body_Cp_H2] *= tp_m13;
+    k2body_[i2body_Cp_H2_e] *= tp_m13;
+    k2body_[i2body_OH_C] *= tp_m0339;
+    k2body_[i2body_Hep_e] *= tp_m05;
+    k2body_[i2body_H3p_e] *= tp_m052;
+    k2body_[i2body_H3p_e_3H] *= tp_m052;
+    k2body_[i2body_HCOp_e] *= tp_m064;
+    k2body_[i2body_H2p_H2] *= tp_0042;
+    k2body_[i2body_CH_H] *= tp_026;
+    k2body_[i2body_Sip_e] *= tp_m062;
+    for (int i = 0; i < n_2body_; i++) {
+      k2body_[i] *= n_H;
     }
 
     // Special treatment of rates for some equations
@@ -1015,28 +1043,31 @@ class GOW17Network {
              c_kCHx_[1] * Kokkos::exp(-Ti_kCHx_[1] / T) +
              c_kCHx_[2] * Kokkos::exp(-Ti_kCHx_[2] / T) +
              c_kCHx_[3] * Kokkos::exp(-Ti_kCHx_[3] / T);
-    k2body_[0] *= t1_CHx + Kokkos::pow(T, -1.5) * t2_CHx;
+    k2body_[i2body_H3p_C] *= t1_CHx + Kokkos::pow(T, -1.5) * t2_CHx;
     // (3) He+ + H2 -> H+ + *He + *H   --fit to Schauer1989
-    k2body_[3] *= Kokkos::exp(-22.5 / T);
+    k2body_[i2body_Hep_H2] *= Kokkos::exp(-22.5 / T);
     // (5) C+ + H2 -> CH + *H         -- schematic reaction for C+ + H2 -> CH2+
-    k2body_[5] *= Kokkos::exp(-23. / T);
-    // ---branching of C+ + H2 ------
-    // (22) C+ + H2 + *e -> *C + *H + *H
-    k2body_[22] *= Kokkos::exp(-23. / T);
+    // (22) C+ + H2 + *e -> *C + *H + *H  (branching of C+ + H2) share this
+    // activation factor, so evaluate it once.
+    const Real exp_m23_T = Kokkos::exp(-23. / T);
+    k2body_[i2body_Cp_H2] *= exp_m23_T;
+    k2body_[i2body_Cp_H2_e] *= exp_m23_T;
     // (6) C+ + OH -> HCO+         -- Schematic equation for C+ + OH -> CO+ + H.
     // Use rates in KIDA website.
-    k2body_[6] = 9.15e-10 * kida_fac;
+    k2body_[i2body_Cp_OH] = 9.15e-10 * kida_fac;
     // (8) OH + *C -> CO + *H          --exp(0.108/T)
-    k2body_[8] *= Kokkos::exp(0.108 / T);
+    k2body_[i2body_OH_C] *= Kokkos::exp(0.108 / T);
     // (9) He+ + *e -> *He             --(17) Case B
-    k2body_[9] *= 11.19 + (-1.676 + (-0.2852 + 0.04433 * logT) * logT) * logT;
+    k2body_[i2body_Hep_e] *=
+        11.19 + (-1.676 + (-0.2852 + 0.04433 * logT) * logT) * logT;
     // (11) C+ + *e -> *C              -- Include RR and DR, Badnell2003, 2006.
-    k2body_[11] = CII_rec_rate_(T) * n_H;
+    k2body_[i2body_Cp_e] = CII_rec_rate_(T) * n_H;
     // (13) H2+ + H2 -> H3+ + *H       --(54) exp(-T/46600)
-    k2body_[13] *= Kokkos::exp(-T / 46600.);
+    k2body_[i2body_H2p_H2] *= Kokkos::exp(-T / 46600.);
     // (14) H+ + *e -> *H              --(12) Case B
-    k2body_[14] *= Kokkos::pow(315614.0 / T, 1.5) *
-                   Kokkos::pow(1.0 + Kokkos::pow(115188.0 / T, 0.407), -2.242);
+    k2body_[i2body_Hp_e] *=
+        Kokkos::pow(315614.0 / T, 1.5) *
+        Kokkos::pow(1.0 + Kokkos::pow(115188.0 / T, 0.407), -2.242);
     //--- H2O+ + e branching--
     // (1) H3+ + *O -> OH + H2
     // (24) H3+ + *O + *e -> H2 + *O + *H
@@ -1050,22 +1081,22 @@ class GOW17Network {
     }
     fac_H2Oplus_H2 = h2oplus_ratio / (h2oplus_ratio + 1.);
     fac_H2Oplus_e = 1. / (h2oplus_ratio + 1.);
-    k2body_[1] *= fac_H2Oplus_H2;
-    k2body_[24] *= fac_H2Oplus_e;
+    k2body_[i2body_H3p_O] *= fac_H2Oplus_H2;
+    k2body_[i2body_H3p_O_H2] *= fac_H2Oplus_e;
     // (25) He+ + OH -> *H + *He + *O(O+)
-    k2body_[25] = 1.35e-9 * kida_fac;
+    k2body_[i2body_Hep_OH] = 1.35e-9 * kida_fac;
     //  --- O+ reactions ---
     //  (27) H+ + *O -> O+ + *H -- exp(-227/T)
     //  (28) O+ + *H -> H+ + *O
     //  (29) O+ + H2 -> OH + *H     -- branching of H2O+
     //  (30) O+ + H2 -> *O + *H + *H  -- branching of H2O+ */
-    k2body_[27] *=
+    k2body_[i2body_Hp_O] *=
         (1.1e-11 * Kokkos::pow(T, 0.517) + 4.0e-10 * Kokkos::pow(T, 6.69e-3)) *
         Kokkos::exp(-227. / T);
-    k2body_[28] *=
+    k2body_[i2body_Op_H] *=
         4.99e-11 * Kokkos::pow(T, 0.405) + 7.5e-10 * Kokkos::pow(T, -0.458);
-    k2body_[29] *= fac_H2Oplus_H2;
-    k2body_[30] *= fac_H2Oplus_e;
+    k2body_[i2body_Op_H2_OH] *= fac_H2Oplus_H2;
+    k2body_[i2body_Op_H2] *= fac_H2Oplus_e;
 
     // Collisional dissociation, k>~1.0e-30 at T>~5e2.
     Real k9l, k9h, k10l, k10h, ncrH, ncrH2, div_ncr;
@@ -1093,14 +1124,16 @@ class GOW17Network {
         ncr = 1. / div_ncr;
       }
       n2ncr = n_H / ncr;
-      k2body_[15] = Kokkos::pow(10, Kokkos::log10(k9h) * n2ncr / (1. + n2ncr) +
-                                        Kokkos::log10(k9l) / (1. + n2ncr)) *
-                    n_H;
-      k2body_[16] = Kokkos::pow(10, Kokkos::log10(k10h) * n2ncr / (1. + n2ncr) +
-                                        Kokkos::log10(k10l) / (1. + n2ncr)) *
-                    n_H;
+      k2body_[i2body_H2_H] =
+          Kokkos::pow(10, Kokkos::log10(k9h) * n2ncr / (1. + n2ncr) +
+                              Kokkos::log10(k9l) / (1. + n2ncr)) *
+          n_H;
+      k2body_[i2body_H2_H2] =
+          Kokkos::pow(10, Kokkos::log10(k10h) * n2ncr / (1. + n2ncr) +
+                              Kokkos::log10(k10l) / (1. + n2ncr)) *
+          n_H;
       // (17) *H + *e -> H+ + 2 *e       --(11) Relates to Te
-      k2body_[17] *= Kokkos::exp(
+      k2body_[i2body_H_e] *= Kokkos::exp(
           -3.271396786e1 +
           (1.35365560e1 +
            (-5.73932875 +
@@ -1116,9 +1149,9 @@ class GOW17Network {
                lnTecoll) *
               lnTecoll);
     } else {
-      k2body_[15] = 0.;
-      k2body_[16] = 0.;
-      k2body_[17] = 0.;
+      k2body_[i2body_H2_H] = 0.;
+      k2body_[i2body_H2_H2] = 0.;
+      k2body_[i2body_H_e] = 0.;
     }
 
     // photo reactions
@@ -1154,37 +1187,32 @@ class GOW17Network {
       }
       psi_gr_fac_ = 1.7 * GPE0 * Kokkos::sqrt(T) / n_H;
       psi = psi_gr_fac_ / ghosts.e;
+      // ln(T) appears in the exponent of all four species below, so compute it
+      // once rather than once per rate.
+      const Real lnT = Kokkos::log(T);
       kgr_[1] =
           1.0e-14 * cHp_[0] /
-          (1.0 +
-           cHp_[1] * Kokkos::pow(psi, cHp_[2]) *
-               (1.0 +
-                cHp_[3] * Kokkos::pow(T, cHp_[4]) *
-                    Kokkos::pow(psi, -cHp_[5] - cHp_[6] * Kokkos::log(T)))) *
+          (1.0 + cHp_[1] * Kokkos::pow(psi, cHp_[2]) *
+                     (1.0 + cHp_[3] * Kokkos::pow(T, cHp_[4]) *
+                                Kokkos::pow(psi, -cHp_[5] - cHp_[6] * lnT))) *
           n_H * zd;
       kgr_[2] =
           1.0e-14 * cCp_[0] /
-          (1.0 +
-           cCp_[1] * Kokkos::pow(psi, cCp_[2]) *
-               (1.0 +
-                cCp_[3] * Kokkos::pow(T, cCp_[4]) *
-                    Kokkos::pow(psi, -cCp_[5] - cCp_[6] * Kokkos::log(T)))) *
+          (1.0 + cCp_[1] * Kokkos::pow(psi, cCp_[2]) *
+                     (1.0 + cCp_[3] * Kokkos::pow(T, cCp_[4]) *
+                                Kokkos::pow(psi, -cCp_[5] - cCp_[6] * lnT))) *
           n_H * zd;
       kgr_[3] =
           1.0e-14 * cHep_[0] /
-          (1.0 +
-           cHep_[1] * Kokkos::pow(psi, cHep_[2]) *
-               (1.0 +
-                cHep_[3] * Kokkos::pow(T, cHep_[4]) *
-                    Kokkos::pow(psi, -cHep_[5] - cHep_[6] * Kokkos::log(T)))) *
+          (1.0 + cHep_[1] * Kokkos::pow(psi, cHep_[2]) *
+                     (1.0 + cHep_[3] * Kokkos::pow(T, cHep_[4]) *
+                                Kokkos::pow(psi, -cHep_[5] - cHep_[6] * lnT))) *
           n_H * zd;
       kgr_[4] =
           1.0e-14 * cSip_[0] /
-          (1.0 +
-           cSip_[1] * Kokkos::pow(psi, cSip_[2]) *
-               (1.0 +
-                cSip_[3] * Kokkos::pow(T, cSip_[4]) *
-                    Kokkos::pow(psi, -cSip_[5] - cSip_[6] * Kokkos::log(T)))) *
+          (1.0 + cSip_[1] * Kokkos::pow(psi, cSip_[2]) *
+                     (1.0 + cSip_[3] * Kokkos::pow(T, cSip_[4]) *
+                                Kokkos::pow(psi, -cSip_[5] - cSip_[6] * lnT))) *
           n_H * zd;
     } else {
       for (int i = 1; i < 5; i++) {
