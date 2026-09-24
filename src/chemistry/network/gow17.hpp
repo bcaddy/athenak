@@ -2089,7 +2089,7 @@ class GOW17Network {
                  lnTecoll) *
                 lnTecoll) *
                lnTecoll) *
-              lnTecoll);  // NOLINT
+              lnTecoll);
       } else {
         k2body_[17] = 0.;
       }

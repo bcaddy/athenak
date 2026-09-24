@@ -234,7 +234,59 @@ class H2Network {
   KOKKOS_FUNCTION void evaluate_jacobian(const Real t, const Real dt,
                                          const vec_type& y_in,
                                          const mat_type& jac) const {
-    chemistry::numerical_jacobian(*this, t, dt, y_in, jac);
+    // This analytic Jacobian was compute by an LLM. It passes the tests and
+    // appears to be correct at first inspection but I cannot promise that it
+    // does not contain a subtle error
+
+    //         ∂/∂y(IH2)         ∂/∂y(IH)     ∂/∂y(IIE)
+    // IH2  [    -a                 b              0      ]
+    // IH   [    2a                -2b             0      ]
+    // IIE  [ ∂Edot/∂y(IH2)         0        ∂Edot/∂y(IIE)]
+    // with a = units_time_cgs·k_cr, b = units_time_cgs·k_gr·n_H
+
+    const Real a = units_time_cgs * k_cr;        // rate_cr
+    const Real b = units_time_cgs * k_gr * n_H;  // rate_gr
+
+    // ----- H2 / H block (exactly linear) -----
+    jac(IH2, IH2) = -a;
+    jac(IH2, IH) = b;
+    jac(IH2, IIE) = 0.0;
+
+    jac(IH, IH2) = 2.0 * a;
+    jac(IH, IH) = -2.0 * b;
+    jac(IH, IIE) = 0.0;
+
+    // ----- Energy row -----
+    jac(IIE, IH2) = 0.0;
+    jac(IIE, IH) = 0.0;
+    jac(IIE, IIE) = 0.0;
+
+    if (!isothermal) {
+      static constexpr Real x_He = 0.1;
+      const Real x_H2_raw = const_cv ? 0.0 : y_in(IH2);
+      const Real x_H2 = Kokkos::fmin(Kokkos::fmax(x_H2_raw, 0.0), 0.5);
+
+      const Real K = units_energy_density_cgs / n_H;
+      const Real Cv = Thermo::CvCold(x_H2_raw, x_He, 0.0, gamma);
+      const Real T = y_in(IIE) * K / Cv;
+
+      static constexpr Real T_floor = 1.0;
+      if (T >= T_floor) {
+        const Real C = units_time_cgs * n_H * n_H * Thermo::alpha_GD_ /
+                       units_energy_density_cgs;
+        const Real dEdot_dT = -1.5 * C * Kokkos::sqrt(T);
+
+        jac(IIE, IIE) = dEdot_dT * (K / Cv);
+
+        // dCv/dx_H2 = -kB/(gamma-1), only in the unclamped interior
+        const bool interior = !const_cv && (x_H2_raw > 0.0) && (x_H2_raw < 0.5);
+        if (interior) {
+          const Real kB = units::Units::k_boltzmann_cgs;
+          const Real dCv_dxH2 = -kB / (gamma - 1.0);
+          jac(IIE, IH2) = -dEdot_dT * (T / Cv) * dCv_dxH2;
+        }
+      }
+    }
   }
 
  private:
