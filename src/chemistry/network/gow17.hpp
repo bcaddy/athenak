@@ -377,11 +377,14 @@ class GOW17Network {
 
     // H2 formation on dust grains
     const Real k_xH2_photo = kph_[iph_H2];
-    heating += Thermo::HeatingH2gr(ghosts.H, y_in[IH2], n_H, T, kgr_[igr_H],
-                                   k_xH2_photo);
+    // The grain-formation and UV-pumping terms share this density-dependent
+    // efficiency factor, so compute it once for both.
+    const Real h2_fac =
+        Thermo::H2HeatFac(ghosts.H, y_in[IH2], n_H, T, k_xH2_photo);
+    heating += Thermo::HeatingH2gr(ghosts.H, kgr_[igr_H], h2_fac);
 
     // H2 UV pumping
-    heating += Thermo::HeatingH2pump(ghosts.H, y_in[IH2], n_H, T, k_xH2_photo);
+    heating += Thermo::HeatingH2pump(y_in[IH2], k_xH2_photo, h2_fac);
 
     // H2 Photodissociation
     heating += Thermo::HeatingH2diss(k_xH2_photo, y_in[IH2]);
@@ -958,6 +961,12 @@ class GOW17Network {
     }
 
     const Real logT = Kokkos::log10(T);
+    // Natural log of the (clamped) temperature. Many rates below are powers of
+    // T or of psi; rewriting pow(a,b) as exp(b*log(a)) lets them share this one
+    // log instead of each transcendental recomputing one internally.
+    const Real lnT = Kokkos::log(T);
+    // pow(10, x) == exp(x*ln10), which avoids the general power routine.
+    constexpr Real ln10_ = 2.30258509299404590e0;
     const Real logT4coll = Kokkos::log10(T_collisional / 1.0e4);
     const Real lnTecoll = Kokkos::log(T_collisional * 8.6173e-5);
 
@@ -1006,15 +1015,16 @@ class GOW17Network {
       k2body_[i] = k2body_base[i];
     }
     // The nine distinct nonzero exponents, applied to their reactions.
-    const Real tp_m0190 = Kokkos::pow(T, -0.190);  // (1) (24)
-    const Real tp_m13 = Kokkos::pow(T, -1.3);      // (5) (22)
-    const Real tp_m0339 = Kokkos::pow(T, -0.339);  // (8)
-    const Real tp_m05 = Kokkos::pow(T, -0.5);      // (9)
-    const Real tp_m052 = Kokkos::pow(T, -0.52);    // (10) (18)
-    const Real tp_m064 = Kokkos::pow(T, -0.64);    // (12)
-    const Real tp_0042 = Kokkos::pow(T, 0.042);    // (13)
-    const Real tp_026 = Kokkos::pow(T, 0.26);      // (20)
-    const Real tp_m062 = Kokkos::pow(T, -0.62);    // (23)
+    // Each pow(T, e) is written exp(e*lnT) to reuse the shared lnT above.
+    const Real tp_m0190 = Kokkos::exp(-0.190 * lnT);  // (1) (24)
+    const Real tp_m13 = Kokkos::exp(-1.3 * lnT);      // (5) (22)
+    const Real tp_m0339 = Kokkos::exp(-0.339 * lnT);  // (8)
+    const Real tp_m05 = Kokkos::exp(-0.5 * lnT);      // (9)
+    const Real tp_m052 = Kokkos::exp(-0.52 * lnT);    // (10) (18)
+    const Real tp_m064 = Kokkos::exp(-0.64 * lnT);    // (12)
+    const Real tp_0042 = Kokkos::exp(0.042 * lnT);    // (13)
+    const Real tp_026 = Kokkos::exp(0.26 * lnT);      // (20)
+    const Real tp_m062 = Kokkos::exp(-0.62 * lnT);    // (23)
     k2body_[i2body_H3p_O] *= tp_m0190;
     k2body_[i2body_H3p_O_H2] *= tp_m0190;
     k2body_[i2body_Cp_H2] *= tp_m13;
@@ -1036,14 +1046,19 @@ class GOW17Network {
     // rates for H3+ + C forming CH+ and CH2+
     constexpr Real A_kCHx_ = 1.04e-9;
     constexpr Real n_kCHx_ = 2.31e-3;
+    // Natural logs of the constants below, used to rewrite pow(c/T, e) as
+    // exp(e*(log(c)-log(T))) so the powers share the single lnT.
+    constexpr Real ln300_ = 5.70378247465620092e0;
+    constexpr Real ln315614_ = 1.26622752269192862e1;
+    constexpr Real ln115188_ = 1.16543208551515374e1;
     constexpr Real c_kCHx_[4] = {3.4e-8, 6.97e-9, 1.31e-7, 1.51e-4};
     constexpr Real Ti_kCHx_[4] = {7.62, 1.38, 2.66e1, 8.11e3};
-    t1_CHx = A_kCHx_ * Kokkos::pow(300. / T, n_kCHx_);
+    t1_CHx = A_kCHx_ * Kokkos::exp(n_kCHx_ * (ln300_ - lnT));
     t2_CHx = c_kCHx_[0] * Kokkos::exp(-Ti_kCHx_[0] / T) +
              c_kCHx_[1] * Kokkos::exp(-Ti_kCHx_[1] / T) +
              c_kCHx_[2] * Kokkos::exp(-Ti_kCHx_[2] / T) +
              c_kCHx_[3] * Kokkos::exp(-Ti_kCHx_[3] / T);
-    k2body_[i2body_H3p_C] *= t1_CHx + Kokkos::pow(T, -1.5) * t2_CHx;
+    k2body_[i2body_H3p_C] *= t1_CHx + Kokkos::exp(-1.5 * lnT) * t2_CHx;
     // (3) He+ + H2 -> H+ + *He + *H   --fit to Schauer1989
     k2body_[i2body_Hep_H2] *= Kokkos::exp(-22.5 / T);
     // (5) C+ + H2 -> CH + *H         -- schematic reaction for C+ + H2 -> CH2+
@@ -1065,9 +1080,11 @@ class GOW17Network {
     // (13) H2+ + H2 -> H3+ + *H       --(54) exp(-T/46600)
     k2body_[i2body_H2p_H2] *= Kokkos::exp(-T / 46600.);
     // (14) H+ + *e -> *H              --(12) Case B
+    // pow(c/T, e) rewritten as exp(e*(log c - log T)) to reuse lnT; the outer
+    // power has a non-constant base so it stays as pow.
     k2body_[i2body_Hp_e] *=
-        Kokkos::pow(315614.0 / T, 1.5) *
-        Kokkos::pow(1.0 + Kokkos::pow(115188.0 / T, 0.407), -2.242);
+        Kokkos::exp(1.5 * (ln315614_ - lnT)) *
+        Kokkos::pow(1.0 + Kokkos::exp(0.407 * (ln115188_ - lnT)), -2.242);
     //--- H2O+ + e branching--
     // (1) H3+ + *O -> OH + H2
     // (24) H3+ + *O + *e -> H2 + *O + *H
@@ -1091,10 +1108,11 @@ class GOW17Network {
     //  (29) O+ + H2 -> OH + *H     -- branching of H2O+
     //  (30) O+ + H2 -> *O + *H + *H  -- branching of H2O+ */
     k2body_[i2body_Hp_O] *=
-        (1.1e-11 * Kokkos::pow(T, 0.517) + 4.0e-10 * Kokkos::pow(T, 6.69e-3)) *
+        (1.1e-11 * Kokkos::exp(0.517 * lnT) +
+         4.0e-10 * Kokkos::exp(6.69e-3 * lnT)) *
         Kokkos::exp(-227. / T);
-    k2body_[i2body_Op_H] *=
-        4.99e-11 * Kokkos::pow(T, 0.405) + 7.5e-10 * Kokkos::pow(T, -0.458);
+    k2body_[i2body_Op_H] *= 4.99e-11 * Kokkos::exp(0.405 * lnT) +
+                            7.5e-10 * Kokkos::exp(-0.458 * lnT);
     k2body_[i2body_Op_H2_OH] *= fac_H2Oplus_H2;
     k2body_[i2body_Op_H2] *= fac_H2Oplus_e;
 
@@ -1105,17 +1123,21 @@ class GOW17Network {
       // (15) H2 + *H -> 3 *H
       // (16) H2 + H2 -> H2 + 2 *H
       // --(9) Density dependent. See Glover+MacLow2007
+      // T_collisional is only clamped above, so it needs its own log; the two
+      // powers of it below then share it.
+      const Real lnTcoll = Kokkos::log(T_collisional);
       k9l = 6.67e-12 * Kokkos::sqrt(T_collisional) *
             Kokkos::exp(-(1. + 63590. / T_collisional));
       k9h = 3.52e-9 * Kokkos::exp(-43900.0 / T_collisional);
-      k10l = 5.996e-30 * Kokkos::pow(T_collisional, 4.1881) /
+      k10l = 5.996e-30 * Kokkos::exp(4.1881 * lnTcoll) /
              Kokkos::pow((1.0 + 6.761e-6 * T_collisional), 5.6881) *
              Kokkos::exp(-54657.4 / T_collisional);
       k10h = 1.3e-9 * Kokkos::exp(-53300.0 / T_collisional);
-      ncrH = Kokkos::pow(
-          10, (3.0 - 0.416 * logT4coll - 0.327 * logT4coll * logT4coll));
-      ncrH2 = Kokkos::pow(
-          10, (4.845 - 1.3 * logT4coll + 1.62 * logT4coll * logT4coll));
+      // pow(10, x) == exp(x*log(10)), which avoids the general power routine.
+      ncrH = Kokkos::exp(ln10_ *
+                         (3.0 - 0.416 * logT4coll - 0.327 * logT4coll * logT4coll));
+      ncrH2 = Kokkos::exp(ln10_ *
+                          (4.845 - 1.3 * logT4coll + 1.62 * logT4coll * logT4coll));
       div_ncr =
           ghosts.H / (ncrH + small_real) + y_in[IH2] / (ncrH2 + small_real);
       if (div_ncr < small_real) {
@@ -1125,12 +1147,12 @@ class GOW17Network {
       }
       n2ncr = n_H / ncr;
       k2body_[i2body_H2_H] =
-          Kokkos::pow(10, Kokkos::log10(k9h) * n2ncr / (1. + n2ncr) +
-                              Kokkos::log10(k9l) / (1. + n2ncr)) *
+          Kokkos::exp(ln10_ * (Kokkos::log10(k9h) * n2ncr / (1. + n2ncr) +
+                               Kokkos::log10(k9l) / (1. + n2ncr))) *
           n_H;
       k2body_[i2body_H2_H2] =
-          Kokkos::pow(10, Kokkos::log10(k10h) * n2ncr / (1. + n2ncr) +
-                              Kokkos::log10(k10l) / (1. + n2ncr)) *
+          Kokkos::exp(ln10_ * (Kokkos::log10(k10h) * n2ncr / (1. + n2ncr) +
+                               Kokkos::log10(k10l) / (1. + n2ncr))) *
           n_H;
       // (17) *H + *e -> H+ + 2 *e       --(11) Relates to Te
       k2body_[i2body_H_e] *= Kokkos::exp(
@@ -1187,33 +1209,34 @@ class GOW17Network {
       }
       psi_gr_fac_ = 1.7 * GPE0 * Kokkos::sqrt(T) / n_H;
       psi = psi_gr_fac_ / ghosts.e;
-      // ln(T) appears in the exponent of all four species below, so compute it
-      // once rather than once per rate.
-      const Real lnT = Kokkos::log(T);
-      kgr_[1] =
-          1.0e-14 * cHp_[0] /
-          (1.0 + cHp_[1] * Kokkos::pow(psi, cHp_[2]) *
-                     (1.0 + cHp_[3] * Kokkos::pow(T, cHp_[4]) *
-                                Kokkos::pow(psi, -cHp_[5] - cHp_[6] * lnT))) *
-          n_H * zd;
-      kgr_[2] =
-          1.0e-14 * cCp_[0] /
-          (1.0 + cCp_[1] * Kokkos::pow(psi, cCp_[2]) *
-                     (1.0 + cCp_[3] * Kokkos::pow(T, cCp_[4]) *
-                                Kokkos::pow(psi, -cCp_[5] - cCp_[6] * lnT))) *
-          n_H * zd;
-      kgr_[3] =
-          1.0e-14 * cHep_[0] /
-          (1.0 + cHep_[1] * Kokkos::pow(psi, cHep_[2]) *
-                     (1.0 + cHep_[3] * Kokkos::pow(T, cHep_[4]) *
-                                Kokkos::pow(psi, -cHep_[5] - cHep_[6] * lnT))) *
-          n_H * zd;
-      kgr_[4] =
-          1.0e-14 * cSip_[0] /
-          (1.0 + cSip_[1] * Kokkos::pow(psi, cSip_[2]) *
-                     (1.0 + cSip_[3] * Kokkos::pow(T, cSip_[4]) *
-                                Kokkos::pow(psi, -cSip_[5] - cSip_[6] * lnT))) *
-          n_H * zd;
+      // ln(psi) appears in the exponents of all four species below (lnT is
+      // already in scope), so compute it once and rewrite each pow as
+      // exp(exponent * log(base)).
+      const Real lnPsi = Kokkos::log(psi);
+      kgr_[1] = 1.0e-14 * cHp_[0] /
+                (1.0 + cHp_[1] * Kokkos::exp(cHp_[2] * lnPsi) *
+                           (1.0 + cHp_[3] * Kokkos::exp(cHp_[4] * lnT) *
+                                      Kokkos::exp((-cHp_[5] - cHp_[6] * lnT) *
+                                                  lnPsi))) *
+                n_H * zd;
+      kgr_[2] = 1.0e-14 * cCp_[0] /
+                (1.0 + cCp_[1] * Kokkos::exp(cCp_[2] * lnPsi) *
+                           (1.0 + cCp_[3] * Kokkos::exp(cCp_[4] * lnT) *
+                                      Kokkos::exp((-cCp_[5] - cCp_[6] * lnT) *
+                                                  lnPsi))) *
+                n_H * zd;
+      kgr_[3] = 1.0e-14 * cHep_[0] /
+                (1.0 + cHep_[1] * Kokkos::exp(cHep_[2] * lnPsi) *
+                           (1.0 + cHep_[3] * Kokkos::exp(cHep_[4] * lnT) *
+                                      Kokkos::exp((-cHep_[5] - cHep_[6] * lnT) *
+                                                  lnPsi))) *
+                n_H * zd;
+      kgr_[4] = 1.0e-14 * cSip_[0] /
+                (1.0 + cSip_[1] * Kokkos::exp(cSip_[2] * lnPsi) *
+                           (1.0 + cSip_[3] * Kokkos::exp(cSip_[4] * lnT) *
+                                      Kokkos::exp((-cSip_[5] - cSip_[6] * lnT) *
+                                                  lnPsi))) *
+                n_H * zd;
     } else {
       for (int i = 1; i < 5; i++) {
         kgr_[i] = 0.;
@@ -1241,10 +1264,14 @@ class GOW17Network {
     const Real term2 = Kokkos::sqrt(T / T1);
     const Real alpha_rr = A / (term1 * Kokkos::pow(1.0 + term1, 1.0 - BN) *
                                Kokkos::pow(1.0 + term2, 1.0 + BN));
+    // T^(-3/2) = T0^(-3/2) * (T/T0)^(-3/2) = T0^(-3/2) / term1^3, so the
+    // dielectronic power comes for free from term1 instead of a pow().
+    constexpr Real T0_inv15_ = 1.83574032975375144e3;
     const Real alpha_dr =
-        Kokkos::pow(T, -3.0 / 2.0) * (6.346e-9 * Kokkos::exp(-1.217e1 / T) +
-                                      9.793e-09 * Kokkos::exp(-7.38e1 / T) +
-                                      1.634e-06 * Kokkos::exp(-1.523e+04 / T));
+        (T0_inv15_ / (term1 * term1 * term1)) *
+        (6.346e-9 * Kokkos::exp(-1.217e1 / T) +
+         9.793e-09 * Kokkos::exp(-7.38e1 / T) +
+         1.634e-06 * Kokkos::exp(-1.523e+04 / T));
     return (alpha_rr + alpha_dr);
   }
 

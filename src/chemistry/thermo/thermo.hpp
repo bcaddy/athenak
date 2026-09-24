@@ -108,11 +108,46 @@ class Thermo {
       return 0.;
     }
     const Real x = 1.7 * G * Kokkos::sqrt(T) / ne + 50.;
-    const Real fac = (CPE_[0] + CPE_[1] * Kokkos::pow(T, CPE_[4])) /
-                     (1. + CPE_[2] * Kokkos::pow(x, CPE_[5]) *
-                               (1. + CPE_[3] * Kokkos::pow(x, CPE_[6])));
+    // pow(a,b) -> exp(b*log(a)) so the three powers share two logs
+    const Real lnT = Kokkos::log(T);
+    const Real lnx = Kokkos::log(x);
+    const Real fac = (CPE_[0] + CPE_[1] * Kokkos::exp(CPE_[4] * lnT)) /
+                     (1. + CPE_[2] * Kokkos::exp(CPE_[5] * lnx) *
+                               (1. + CPE_[3] * Kokkos::exp(CPE_[6] * lnx)));
     const Real heating = 1.7e-26 * G * Zd * fac;
     return heating;
+  }
+
+  //-------------------------------------------------------------------------------------
+  /*!
+   * \brief Density-dependent efficiency factor shared by the two H2 heating
+   * terms, from Hollenbach + McKee 1979, collisional rates from Visser et al.
+   * (2018).
+   *
+   * \details HeatingH2gr and HeatingH2pump both need this factor; exposing it
+   * lets the caller compute it once per energy evaluation instead of twice.
+   *
+   * \param xHI
+   * \param xH2
+   * \param nH Number density of hydrogen
+   * \param T temperature in K
+   * \param k_xH2_photo photo dissociation of H2 by UV light per H2.
+   * \return Real the density-dependent heating efficiency factor
+   */
+  KOKKOS_FUNCTION static Real H2HeatFac(const Real xHI, const Real xH2,
+                                        const Real nH, const Real T,
+                                        const Real k_xH2_photo) {
+    const Real A = 2.0e-7;
+    const Real D = k_xH2_photo;
+    const Real t = 1. + T / 1000.;
+    // pow(10, x) -> exp(x*ln10) to avoid the general power routine
+    const Real geff_H =
+        Kokkos::exp(ln10_ * (-11.06 + 0.0555 / t - 2.390 / (t * t)));
+    const Real geff_H2 =
+        Kokkos::exp(ln10_ * (-11.08 - 3.671 / t - 2.023 / (t * t)));
+    // critical density ncr, heating only effective at n > ncr
+    const Real ncr = (A + D) / (geff_H * xHI + geff_H2 * xH2);
+    return 1. / (1. + ncr / nH);
   }
 
   //-------------------------------------------------------------------------------------
@@ -121,29 +156,13 @@ class Thermo {
    * 1979, collisional rates from Visser et al. (2018)
    * (0) *H + *H + gr -> H2 + gr
    *
-   * NOTE: All but the return line of this function is identical to
-   * HeatingH2Pump, there might be optimization opportunities to combine them.
-   *
    * \param xHI
-   * \param xH2
-   * \param nH Number density of hydrogen
-   * \param T temperature in K
    * \param kgr grain reaction rates, kgr_ in NL99p.
-   * \param k_xH2_photo photo dissociation of H2 by UV light per H2.
+   * \param f the density-dependent efficiency factor from H2HeatFac
    * \return Real Heating rate by H2 formation on dust grains in erg H^-1 s^-1.
    */
-  KOKKOS_FUNCTION static Real HeatingH2gr(const Real xHI, const Real xH2,
-                                          const Real nH, const Real T,
-                                          const Real kgr,
-                                          const Real k_xH2_photo) {
-    const Real A = 2.0e-7;
-    const Real D = k_xH2_photo;
-    const Real t = 1. + T / 1000.;
-    const Real geff_H = Kokkos::pow(10, -11.06 + 0.0555 / t - 2.390 / (t * t));
-    const Real geff_H2 = Kokkos::pow(10, -11.08 - 3.671 / t - 2.023 / (t * t));
-    // critical density ncr, heating only effective at n > ncr
-    const Real ncr = (A + D) / (geff_H * xHI + geff_H2 * xH2);
-    const Real f = 1. / (1. + ncr / nH);
+  KOKKOS_FUNCTION static Real HeatingH2gr(const Real xHI, const Real kgr,
+                                          const Real f) {
     return kgr * xHI * (0.2 + 4.2 * f) * eV_;
   }
 
@@ -151,28 +170,16 @@ class Thermo {
   /*!
    * \brief Heating by H2 UV pumping, Visser et al. (2018)
    *
-   * NOTE: All but the return line of this function is identical to
-   * HeatingH2gr, there might be optimization opportunities to combine them.
-   *
-   * \param xHI
    * \param xH2
-   * \param nH Number density of hydrogen
-   * \param T temperature in K
    * \param k_xH2_photo photo dissociation of H2 by UV light per H2. Calculated
    * in RHS in NL99p.
+   * \param f the density-dependent efficiency factor from H2HeatFac
    * \return Real Heating rate by H2 UV pumping in erg H^-1 s^-1.
    */
-  KOKKOS_FUNCTION static Real HeatingH2pump(const Real xHI, const Real xH2,
-                                            const Real nH, const Real T,
-                                            const Real k_xH2_photo) {
-    const Real A = 2.0e-7;
+  KOKKOS_FUNCTION static Real HeatingH2pump(const Real xH2,
+                                            const Real k_xH2_photo,
+                                            const Real f) {
     const Real D = k_xH2_photo;
-    const Real t = 1. + T / 1000.;
-    const Real geff_H = Kokkos::pow(10, -11.06 + 0.0555 / t - 2.390 / (t * t));
-    const Real geff_H2 = Kokkos::pow(10, -11.08 - 3.671 / t - 2.023 / (t * t));
-    // critical density ncr, heating only effective at n > ncr
-    const Real ncr = (A + D) / (geff_H * xHI + geff_H2 * xH2);
-    const Real f = 1. / (1. + ncr / nH);
     return D * 8. * 2.0 * f * eV_ * xH2;
   }
 
@@ -274,16 +281,17 @@ class Thermo {
     k21e = fac * Kokkos::exp(lngamma21e) / g2CI_;
     // HI collisional rates, Draine (2011) ISM book Appendix F Table F.6
     //  NOTE: this is more updated than the LAMBDA database.
-    const Real k10HI = 1.26e-10 * Kokkos::pow(T2, 0.115 + 0.057 * lnT2);
-    const Real k20HI = 0.89e-10 * Kokkos::pow(T2, 0.228 + 0.046 * lnT2);
-    const Real k21HI = 2.64e-10 * Kokkos::pow(T2, 0.231 + 0.046 * lnT2);
+    //  pow(T2, e) -> exp(e*lnT2) reuses the lnT2 already computed above.
+    const Real k10HI = 1.26e-10 * Kokkos::exp((0.115 + 0.057 * lnT2) * lnT2);
+    const Real k20HI = 0.89e-10 * Kokkos::exp((0.228 + 0.046 * lnT2) * lnT2);
+    const Real k21HI = 2.64e-10 * Kokkos::exp((0.231 + 0.046 * lnT2) * lnT2);
     // H2 collisional rates, Draine (2011) ISM book Appendix F Table F.6
-    const Real k10H2p = 0.67e-10 * Kokkos::pow(T2, -0.085 + 0.102 * lnT2);
-    const Real k10H2o = 0.71e-10 * Kokkos::pow(T2, -0.004 + 0.049 * lnT2);
-    const Real k20H2p = 0.86e-10 * Kokkos::pow(T2, -0.010 + 0.048 * lnT2);
-    const Real k20H2o = 0.69e-10 * Kokkos::pow(T2, 0.169 + 0.038 * lnT2);
-    const Real k21H2p = 1.75e-10 * Kokkos::pow(T2, 0.072 + 0.064 * lnT2);
-    const Real k21H2o = 1.48e-10 * Kokkos::pow(T2, 0.263 + 0.031 * lnT2);
+    const Real k10H2p = 0.67e-10 * Kokkos::exp((-0.085 + 0.102 * lnT2) * lnT2);
+    const Real k10H2o = 0.71e-10 * Kokkos::exp((-0.004 + 0.049 * lnT2) * lnT2);
+    const Real k20H2p = 0.86e-10 * Kokkos::exp((-0.010 + 0.048 * lnT2) * lnT2);
+    const Real k20H2o = 0.69e-10 * Kokkos::exp((0.169 + 0.038 * lnT2) * lnT2);
+    const Real k21H2p = 1.75e-10 * Kokkos::exp((0.072 + 0.064 * lnT2) * lnT2);
+    const Real k21H2o = 1.48e-10 * Kokkos::exp((0.263 + 0.031 * lnT2) * lnT2);
     const Real k10H2 = k10H2p * fp_ + k10H2o * fo_;
     const Real k20H2 = k20H2p * fp_ + k20H2o * fo_;
     const Real k21H2 = k21H2p * fp_ + k21H2o * fo_;
@@ -319,25 +327,28 @@ class Thermo {
     // collisional rates from  Draine (2011) ISM book Appendix F Table F.6
     const Real T2 = T / 100;
     const Real lnT2 = Kokkos::log(T2);
+    // ln(T) = ln(T/100) + ln(100), recovered from lnT2 so the electron rates
+    // below need no extra log. pow(a,b) -> exp(b*ln(a)) throughout.
+    const Real lnT = lnT2 + ln100_;
     // HI
-    const Real k10HI = 3.57e-10 * Kokkos::pow(T2, 0.419 - 0.003 * lnT2);
-    const Real k20HI = 3.19e-10 * Kokkos::pow(T2, 0.369 - 0.006 * lnT2);
-    const Real k21HI = 4.34e-10 * Kokkos::pow(T2, 0.755 - 0.160 * lnT2);
+    const Real k10HI = 3.57e-10 * Kokkos::exp((0.419 - 0.003 * lnT2) * lnT2);
+    const Real k20HI = 3.19e-10 * Kokkos::exp((0.369 - 0.006 * lnT2) * lnT2);
+    const Real k21HI = 4.34e-10 * Kokkos::exp((0.755 - 0.160 * lnT2) * lnT2);
     // H2
-    const Real k10H2p = 1.49e-10 * Kokkos::pow(T2, 0.264 + 0.025 * lnT2);
-    const Real k10H2o = 1.37e-10 * Kokkos::pow(T2, 0.296 + 0.043 * lnT2);
-    const Real k20H2p = 1.90e-10 * Kokkos::pow(T2, 0.203 + 0.041 * lnT2);
-    const Real k20H2o = 2.23e-10 * Kokkos::pow(T2, 0.237 + 0.058 * lnT2);
-    const Real k21H2p = 2.10e-12 * Kokkos::pow(T2, 0.889 + 0.043 * lnT2);
-    const Real k21H2o = 3.00e-12 * Kokkos::pow(T2, 1.198 + 0.525 * lnT2);
+    const Real k10H2p = 1.49e-10 * Kokkos::exp((0.264 + 0.025 * lnT2) * lnT2);
+    const Real k10H2o = 1.37e-10 * Kokkos::exp((0.296 + 0.043 * lnT2) * lnT2);
+    const Real k20H2p = 1.90e-10 * Kokkos::exp((0.203 + 0.041 * lnT2) * lnT2);
+    const Real k20H2o = 2.23e-10 * Kokkos::exp((0.237 + 0.058 * lnT2) * lnT2);
+    const Real k21H2p = 2.10e-12 * Kokkos::exp((0.889 + 0.043 * lnT2) * lnT2);
+    const Real k21H2o = 3.00e-12 * Kokkos::exp((1.198 + 0.525 * lnT2) * lnT2);
     const Real k10H2 = k10H2p * fp_ + k10H2o * fo_;
     const Real k20H2 = k20H2p * fp_ + k20H2o * fo_;
     const Real k21H2 = k21H2p * fp_ + k21H2o * fo_;
     // e
     // fit from Bell+1998
-    const Real k10e = 5.12e-10 * Kokkos::pow(T, -0.075);
-    const Real k20e = 4.86e-10 * Kokkos::pow(T, -0.026);
-    const Real k21e = 1.08e-14 * Kokkos::pow(T, 0.926);
+    const Real k10e = 5.12e-10 * Kokkos::exp(-0.075 * lnT);
+    const Real k20e = 4.86e-10 * Kokkos::exp(-0.026 * lnT);
+    const Real k21e = 1.08e-14 * Kokkos::exp(0.926 * lnT);
     // total collisional rates
     const Real q10 = k10HI * nHI + k10H2 * nH2 + k10e * ne;
     const Real q20 = k20HI * nHI + k20H2 * nH2 + k20e * ne;
@@ -363,8 +374,11 @@ class Thermo {
   KOKKOS_FUNCTION static Real CoolingLya(const Real xHI, const Real ne,
                                          const Real T) {
     const Real T4 = T / 1.0e4;
-    const Real fac =
-        5.31e-8 * Kokkos::pow(T4, 0.15) / (1. + Kokkos::pow(T4 / 5., 0.65));
+    // pow(a,b) -> exp(b*ln(a)); ln(T4/5) = ln(T4) - ln(5) so both powers share
+    // the single log below.
+    const Real lnT4 = Kokkos::log(T4);
+    const Real fac = 5.31e-8 * Kokkos::exp(0.15 * lnT4) /
+                     (1. + Kokkos::exp(0.65 * (lnT4 - ln5_)));
     const Real k01e = fac * Kokkos::exp(-11.84 / T4);
     const Real q01 = k01e * ne;
     const Real q10 = (g0HI_ / g1HI_) * fac * ne;
@@ -394,12 +408,13 @@ class Thermo {
     T = Kokkos::fmin(T, Tmax_CO);
 
     // factor to make the cooling rate goes to zero at T=0.
-    const Real facT = Kokkos::pow(1. - Kokkos::exp(-T), 1.0e3);
+    const Real lnT = Kokkos::log(T);
+    const Real facT = Kokkos::exp(1.0e3 * Kokkos::log(1. - Kokkos::exp(-T)));
     // small number for a very small NCOeff
     const Real eps = 1.0e13;
     const Real log_NCOeff =
         Kokkos::log10(NCOeff * 1.0e5 + eps);  // unit: cm^-2 / (km/s)
-    const Real Troot4 = Kokkos::pow(T, 0.25);
+    const Real Troot4 = Kokkos::exp(0.25 * lnT);
     const Real neff = nH2 + 1.75 * Troot4 * nHI + 680.1 / Troot4 * ne;
     // interpolate parameters using given T and NCOeff
     // index of T and Neff
@@ -409,15 +424,15 @@ class Thermo {
         lenNeffCO_, NeffCO_, log_NCOeff);
     // L0
     const Real log_L0 = -chemistry::interpolation::LP1Di(TCO_, L0CO_, iT0, T);
-    const Real L0 = Kokkos::pow(10, log_L0);
+    const Real L0 = Kokkos::exp(ln10_ * log_L0);
     // LLTE
     const Real log_LLTE = -chemistry::interpolation::LP2Di(
         TCO_, NeffCO_, lenTCO_, iT0, iNeff0, LLTECO_, T, log_NCOeff);
-    const Real LLTE = Kokkos::pow(10, log_LLTE);
+    const Real LLTE = Kokkos::exp(ln10_ * log_LLTE);
     // n1/2
     const Real log_nhalf = chemistry::interpolation::LP2Di(
         TCO_, NeffCO_, lenTCO_, iT0, iNeff0, nhalfCO_, T, log_NCOeff);
-    const Real nhalf = Kokkos::pow(10, log_nhalf);
+    const Real nhalf = Kokkos::exp(ln10_ * log_nhalf);
     // alpha
     const Real alpha = chemistry::interpolation::LP2Di(
         TCO_, NeffCO_, lenTCO_, iT0, iNeff0, alphaCO_, T, log_NCOeff);
@@ -461,6 +476,9 @@ class Thermo {
     }
 
     const Real logT3 = Kokkos::log10(T / 1.0e3);
+    // ln(T/1e3) recovered from logT3, so the pow(10, .) and pow(T3, .) below
+    // become exp() calls with no extra transcendental.
+    const Real lnT3 = logT3 * ln10_;
     const Real logT3_2 = logT3 * logT3;
     const Real logT3_3 = logT3_2 * logT3;
     const Real logT3_4 = logT3_3 * logT3;
@@ -471,54 +489,61 @@ class Thermo {
     Real LHI, LH2, LHe, LHplus, Le;
     // HI
     if (T < 100) {
-      LHI = Kokkos::pow(10, -16.818342e0 + 3.7383713e1 * logT3 +
-                                5.8145166e1 * logT3_2 + 4.8656103e1 * logT3_3 +
-                                2.0159831e1 * logT3_4 + 3.8479610e0 * logT3_5);
+      LHI = Kokkos::exp(ln10_ *
+                        (-16.818342e0 + 3.7383713e1 * logT3 +
+                         5.8145166e1 * logT3_2 + 4.8656103e1 * logT3_3 +
+                         2.0159831e1 * logT3_4 + 3.8479610e0 * logT3_5));
     } else if (T < 1000) {
-      LHI = Kokkos::pow(10, -2.4311209e1 + 3.5692468e0 * logT3 -
-                                1.1332860e1 * logT3_2 - 2.7850082e1 * logT3_3 -
-                                2.1328264e1 * logT3_4 - 4.2519023e0 * logT3_5);
+      LHI = Kokkos::exp(ln10_ *
+                        (-2.4311209e1 + 3.5692468e0 * logT3 -
+                         1.1332860e1 * logT3_2 - 2.7850082e1 * logT3_3 -
+                         2.1328264e1 * logT3_4 - 4.2519023e0 * logT3_5));
     } else {
-      LHI = Kokkos::pow(10, -2.4311209e1 + 4.6450521e0 * logT3 -
-                                3.7209846e0 * logT3_2 + 5.9369081e0 * logT3_3 -
-                                5.5108049e0 * logT3_4 + 1.5538288e0 * logT3_5);
+      LHI = Kokkos::exp(ln10_ *
+                        (-2.4311209e1 + 4.6450521e0 * logT3 -
+                         3.7209846e0 * logT3_2 + 5.9369081e0 * logT3_3 -
+                         5.5108049e0 * logT3_4 + 1.5538288e0 * logT3_5));
     }
     // H2
-    LH2 = Kokkos::pow(10, -2.3962112e1 + 2.09433740e0 * logT3 -
-                              0.77151436e0 * logT3_2 + 0.43693353e0 * logT3_3 -
-                              0.14913216e0 * logT3_4 - 0.033638326e0 * logT3_5);
+    LH2 = Kokkos::exp(ln10_ * (-2.3962112e1 + 2.09433740e0 * logT3 -
+                               0.77151436e0 * logT3_2 + 0.43693353e0 * logT3_3 -
+                               0.14913216e0 * logT3_4 -
+                               0.033638326e0 * logT3_5));
     // He
-    LHe = Kokkos::pow(10, -2.3689237e1 + 2.1892372e0 * logT3 -
-                              0.81520438e0 * logT3_2 + 0.29036281e0 * logT3_3 -
-                              0.16596184e0 * logT3_4 + 0.19191375e0 * logT3_5);
+    LHe = Kokkos::exp(ln10_ * (-2.3689237e1 + 2.1892372e0 * logT3 -
+                               0.81520438e0 * logT3_2 + 0.29036281e0 * logT3_3 -
+                               0.16596184e0 * logT3_4 + 0.19191375e0 * logT3_5));
     // H+
-    LHplus =
-        Kokkos::pow(10, -2.2089523e1 + 1.5714711e0 * logT3 +
-                            0.015391166e0 * logT3_2 - 0.23619985e0 * logT3_3 -
-                            0.51002221e0 * logT3_4 + 0.32168730e0 * logT3_5);
+    LHplus = Kokkos::exp(ln10_ *
+                         (-2.2089523e1 + 1.5714711e0 * logT3 +
+                          0.015391166e0 * logT3_2 - 0.23619985e0 * logT3_3 -
+                          0.51002221e0 * logT3_4 + 0.32168730e0 * logT3_5));
     // e
     if (T < 500) {
-      Le = Kokkos::pow(10, -2.1928796e1 + 1.6815730e1 * logT3 +
-                               9.6743155e1 * logT3_2 + 3.4319180e2 * logT3_3 +
-                               7.3471651e2 * logT3_4 + 9.8367576e2 * logT3_5 +
-                               8.0181247e2 * logT3_6 + 3.6414446e2 * logT3_7 +
-                               7.0609154e1 * logT3_8);
+      Le = Kokkos::exp(ln10_ *
+                       (-2.1928796e1 + 1.6815730e1 * logT3 +
+                        9.6743155e1 * logT3_2 + 3.4319180e2 * logT3_3 +
+                        7.3471651e2 * logT3_4 + 9.8367576e2 * logT3_5 +
+                        8.0181247e2 * logT3_6 + 3.6414446e2 * logT3_7 +
+                        7.0609154e1 * logT3_8));
     } else {
-      Le = Kokkos::pow(10, -2.2921189e1 + 1.6802758e0 * logT3 +
-                               0.93310622e0 * logT3_2 + 4.0406627e0 * logT3_3 -
-                               4.7274036e0 * logT3_4 - 8.8077017e0 * logT3_5 +
-                               8.9167183 * logT3_6 + 6.4380698 * logT3_7 -
-                               6.3701156 * logT3_8);
+      Le = Kokkos::exp(ln10_ *
+                       (-2.2921189e1 + 1.6802758e0 * logT3 +
+                        0.93310622e0 * logT3_2 + 4.0406627e0 * logT3_3 -
+                        4.7274036e0 * logT3_4 - 8.8077017e0 * logT3_5 +
+                        8.9167183 * logT3_6 + 6.4380698 * logT3_7 -
+                        6.3701156 * logT3_8));
     }
     // total cooling in low density limit
     const Real Gamma_n0 =
         LHI * nHI + LH2 * nH2 + LHe * nHe + LHplus * nHplus + Le * ne;
     // cooling rate at LTE, from Hollenbach + McKee 1979
     const Real T3 = T / 1.0e3;
-    const Real Gamma_LTE_HR = (9.5e-22 * Kokkos::pow(T3, 3.76)) /
-                                  (1. + 0.12 * Kokkos::pow(T3, 2.1)) *
-                                  Kokkos::exp(-Kokkos::pow(0.13 / T3, 3)) +
-                              3.e-24 * Kokkos::exp(-0.51 / T3);
+    const Real u = 0.13 / T3;  // integer power, so cube it directly
+    const Real Gamma_LTE_HR =
+        (9.5e-22 * Kokkos::exp(3.76 * lnT3)) /
+            (1. + 0.12 * Kokkos::exp(2.1 * lnT3)) * Kokkos::exp(-(u * u * u)) +
+        3.e-24 * Kokkos::exp(-0.51 / T3);
     const Real Gamma_LTE_HV =
         6.7e-19 * Kokkos::exp(-5.86 / T3) + 1.6e-18 * Kokkos::exp(-11.7 / T3);
     const Real Gamma_LTE = Gamma_LTE_HR + Gamma_LTE_HV;
@@ -547,9 +572,10 @@ class Thermo {
                                          const Real ne, const Real G) {
     const Real x = 1.7 * G * Kokkos::sqrt(T) / (ne + 1e-50) + 50.;
     const Real lnx = Kokkos::log(x);
-    const Real cooling = 1.0e-28 * ne *
-                         Kokkos::pow(T, DPE_[0] + DPE_[1] / lnx) *
-                         Kokkos::exp(DPE_[2] + (DPE_[3] - DPE_[4] * lnx) * lnx);
+    const Real cooling =
+        1.0e-28 * ne *
+        Kokkos::exp((DPE_[0] + DPE_[1] / lnx) * Kokkos::log(T) +
+                    DPE_[2] + (DPE_[3] - DPE_[4] * lnx) * lnx);
     return cooling * Zd;
   }
 
@@ -608,9 +634,10 @@ class Thermo {
                                       const Real ne, const Real T) {
     // Draine (2011) ISM book eq (17.16) and (17.17)
     const Real T2 = T / 100.;
+    const Real lnT2 = Kokkos::log(T2);
     const Real k10e = 4.53e-8 * Kokkos::sqrt(1.0e4 / T);
-    const Real k10HI =
-        7.58e-10 * Kokkos::pow(T2, 0.1281 + 0.0087 * Kokkos::log(T2));
+    // pow(a,b) -> exp(b*ln(a)); lnT = ln(T/100) + ln(100) reuses lnT2
+    const Real k10HI = 7.58e-10 * Kokkos::exp((0.1281 + 0.0087 * lnT2) * lnT2);
     Real k10oH2 = 0;
     Real k10pH2 = 0;
     Real tmp = 0;
@@ -620,7 +647,7 @@ class Thermo {
       k10pH2 = (4.43 + 0.33 * T2) * 1.0e-10;
     } else {
       // Glover+ Jappsen 2007, for high temperature scales similar to HI
-      tmp = Kokkos::pow(T, 0.07);
+      tmp = Kokkos::exp(0.07 * (lnT2 + ln100_));
       k10oH2 = 3.74757785025e-10 * tmp;
       k10pH2 = 3.88997286356e-10 * tmp;
     }
@@ -685,6 +712,13 @@ class Thermo {
   //-------------------------------------------------------------------------------------
   // physical constants
   static constexpr Real eV_ = 1.602e-12;  // eV in erg
+  // ln(10), for rewriting pow(10, x) as exp(x*ln10) to avoid the general
+  // power routine
+  static constexpr Real ln10_ = 2.30258509299404590e0;
+  // ln(100), used to recover ln(T) from ln(T/100) without an extra log
+  static constexpr Real ln100_ = 4.60517018598809180e0;
+  // ln(5), used to recover ln(T4/5) from ln(T4) without an extra log
+  static constexpr Real ln5_ = 1.60943791243410028e0;
   // speed of light * radiation constant, or stephan-boltzmann constant*4
   static constexpr Real ca_ = 2.27e-4;
   static constexpr Real TCMB_ = 2.73;  // CMB temperature
