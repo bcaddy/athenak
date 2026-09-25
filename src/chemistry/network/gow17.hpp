@@ -695,7 +695,7 @@ class GOW17Network {
    * \brief Computes `f` using the values in `y_in`
    */
   template <class vec_type1, class vec_type2>
-  KOKKOS_FUNCTION void evaluate_function(const Real /*t*/, const Real /*dt*/,
+  KOKKOS_FUNCTION __noinline__ void evaluate_function(const Real /*t*/, const Real /*dt*/,
                                          const vec_type1& y_in,
                                          vec_type2& f) const {
     RegisterArray<Real, neqs> y_floor;
