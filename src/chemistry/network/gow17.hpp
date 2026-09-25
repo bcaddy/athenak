@@ -692,9 +692,9 @@ class GOW17Network {
    * \brief Computes `f` using the values in `y_in`
    */
   template <class vec_type1, class vec_type2>
-  KOKKOS_FUNCTION void evaluate_function(const Real /*t*/, const Real /*dt*/,
-                                         const vec_type1& y_in,
-                                         vec_type2& f) const {
+  KOKKOS_FUNCTION __attribute__((noinline)) void evaluate_function(
+      const Real /*t*/, const Real /*dt*/, const vec_type1& y_in,
+      vec_type2& f) const {
     RegisterArray<Real, neqs> y_floor;
     for (size_t i = 0; i < neqs; i++) {
       // Check if inf or NaN valued and throw abort if that's the case
