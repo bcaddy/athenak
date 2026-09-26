@@ -1152,6 +1152,8 @@ class GOW17Network {
    * \param exact_map  Use the exponential map rather than backward Euler for
    *              the scalar species steps. The CO/HCO+ pair keeps its backward-
    *              Euler 2x2, whose exact analogue is a 2x2 matrix exponential.
+   * \param co_block  Solve CO and HCO+ together. When false they take two scalar
+   *              steps, CO then HCO+, and HCO+ -> CO lags by one substep.
    */
   template <class vec_type>
   KOKKOS_FUNCTION void OrderedGaussSeidelUpdate(const vec_type& y, const Real* y_n,
@@ -1159,6 +1161,7 @@ class GOW17Network {
                                                 const bool hep_first,
                                                 const bool exact_map,
                                                 const bool exact_block,
+                                                const bool co_block,
                                                 const bool h2_first,
                                                 const bool exact_ghosts) const {
     const Real u = units_time_cgs;
@@ -1283,7 +1286,11 @@ class GOW17Network {
       const Real c = u * (kcr_[5] + k2body_[i2body_H3p_CO] * y[IH3_plus]);
       const Real d2 = u * k2body_[i2body_HCOp_e] * g.e;
 
-      if (!exact_block) {
+      if (!co_block) {
+        // Two scalar steps. CO reads the start-of-sweep HCO+, HCO+ the new CO.
+        y[ICO] = BEStep_(y_n[ICO], a + b * y[IHCO_plus], d1, h, exact_map);
+        y[IHCO_plus] = BEStep_(y_n[IHCO_plus], f + c * y[ICO], d2, h, exact_map);
+      } else if (!exact_block) {
         // Backward-Euler 2x2. det = A B - b c h^2 >= 1 + (d1 + d2) h, because
         // b <= d2 and c <= d1 by construction, so it never vanishes and every
         // numerator is a sum of non-negative terms.

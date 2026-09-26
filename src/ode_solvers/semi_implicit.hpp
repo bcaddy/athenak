@@ -60,6 +60,9 @@ struct SemiImplicitSettings {
   /// Advance the CO/HCO+ pair with the 2x2 matrix exponential rather than
   /// the backward-Euler 2x2.
   bool semi_implicit_exact_block;
+  /// Solve CO and HCO+ together as a 2x2. When false they take two scalar
+  /// steps, CO then HCO+, so HCO+ -> CO is lagged by one substep.
+  bool semi_implicit_co_block;
   /// Advance the ghost species as the update proceeds rather than holding them
   /// at their start-of-substep values. The closure is linear with integer
   /// coefficients, so this costs about twenty flops per species and makes the
@@ -144,6 +147,7 @@ class SemiImplicit {
         semi_implicit_hep_first(settings.semi_implicit_hep_first),
         semi_implicit_exact_map(settings.semi_implicit_exact_map),
         semi_implicit_exact_block(settings.semi_implicit_exact_block),
+        semi_implicit_co_block(settings.semi_implicit_co_block),
         semi_implicit_exact_ghosts(settings.semi_implicit_exact_ghosts),
         semi_implicit_h2_first(settings.semi_implicit_h2_first),
         semi_implicit_adaptive(settings.semi_implicit_adaptive),
@@ -186,6 +190,8 @@ class SemiImplicit {
   const bool semi_implicit_exact_map;
   /// Whether the CO/HCO+ pair uses the 2x2 matrix exponential
   const bool semi_implicit_exact_block;
+  /// Whether CO and HCO+ are solved together as a 2x2
+  const bool semi_implicit_co_block;
   /// Whether the ghost species are advanced during the update
   const bool semi_implicit_exact_ghosts;
   /// Whether H2 heads the ordered Gauss-Seidel update
@@ -235,6 +241,8 @@ class SemiImplicit {
         pin->GetOrAddBoolean(module, "semi_implicit_exact_map", false);
     settings.semi_implicit_exact_block =
         pin->GetOrAddBoolean(module, "semi_implicit_exact_block", false);
+    settings.semi_implicit_co_block =
+        pin->GetOrAddBoolean(module, "semi_implicit_co_block", true);
     settings.semi_implicit_exact_ghosts =
         pin->GetOrAddBoolean(module, "semi_implicit_exact_ghosts", false);
     settings.semi_implicit_h2_first =
@@ -328,6 +336,7 @@ class SemiImplicit {
                                               semi_implicit_hep_first,
                                               semi_implicit_exact_map,
                                               semi_implicit_exact_block,
+                                              semi_implicit_co_block,
                                               semi_implicit_h2_first,
                                               semi_implicit_exact_ghosts);
         } else {
