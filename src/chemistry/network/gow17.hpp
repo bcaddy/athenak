@@ -1047,12 +1047,16 @@ class GOW17Network {
   KOKKOS_FUNCTION Real HePlusStep_(const vec_type& y, const Real* y_n,
                                    const GhostSpecies& g, const Real h,
                                    const bool exact_map) const {
-    const Real c = kcr_[1] * g.He;
+    // Reservoir form, as the H+ step: the neutral is the remainder
+    // x_He = He_rest - x_He+, written implicitly, so the update cannot move more
+    // helium into He+ than the neutral holds.
+    const Real a = kcr_[1];
+    const Real c = a * (g.He + y[IHE_plus]);
     const Real d = k2body_[i2body_Hep_H2] * y[IH2] +
                    k2body_[i2body_Hep_CO] * y[ICO] +
                    k2body_[i2body_Hep_e] * g.e +
                    k2body_[i2body_Hep_H2_H2p] * y[IH2] +
-                   k2body_[i2body_Hep_OH] * y[IOHx] + kgr_[igr_Hep];
+                   k2body_[i2body_Hep_OH] * y[IOHx] + kgr_[igr_Hep] + a;
     return BEStep_(y_n[IHE_plus], units_time_cgs * c, units_time_cgs * d, h,
                    exact_map);
   }
@@ -1186,9 +1190,13 @@ class GOW17Network {
     }
 
     // ----- Si+ : isolated, couples only through the electron abundance -----
+    // Reservoir form, as the H+ step: x_Si = Si_rest - x_Si+ written implicitly.
+    // Photoionization of Si takes ~10 yr at G0 = 1, far shorter than a substep,
+    // and the explicit form would ionize more silicon than the neutral holds.
     {
-      const Real c = kcr_[6] * g.Si + kph_[iph_Si] * g.Si;
-      const Real d = k2body_[i2body_Sip_e] * g.e + kgr_[igr_Sip];
+      const Real a = kcr_[6] + kph_[iph_Si];
+      const Real c = a * (g.Si + y[ISi_plus]);
+      const Real d = k2body_[i2body_Sip_e] * g.e + kgr_[igr_Sip] + a;
       y[ISi_plus] = BEStep_(y_n[ISi_plus], u * c, u * d, h, exact_map);
       refresh();
     }
@@ -1230,24 +1238,32 @@ class GOW17Network {
     }
 
     // ----- O+ : reads fresh He+ and H+, lags OHx -----
+    // Reservoir form for the charge exchange H+ + O -> O+ + H:
+    // x_O = O_rest - x_O+ written implicitly.
     {
+      const Real a = k2body_[i2body_Hp_O] * y[IH_plus];
       const Real c = k2body_[i2body_Hep_OH] * y[IHE_plus] * y[IOHx] +
-                     k2body_[i2body_Hp_O] * y[IH_plus] * g.O;
+                     a * (g.O + y[IO_plus]);
       const Real d = k2body_[i2body_Op_H] * g.H +
                      k2body_[i2body_Op_H2_OH] * y[IH2] +
-                     k2body_[i2body_Op_H2] * y[IH2];
+                     k2body_[i2body_Op_H2] * y[IH2] + a;
       y[IO_plus] = BEStep_(y_n[IO_plus], u * c, u * d, h, exact_map);
       refresh();
     }
 
     // ----- C+ : reads fresh He+, lags CO and OHx -----
+    // Reservoir form, as the H+ step: x_C = C_rest - x_C+ written implicitly.
+    // Photoionization of C takes ~90 yr at G0 = 1, far shorter than a substep,
+    // and the explicit form would move more carbon into C+ than the neutral
+    // holds; the element renormalization would then clip neutral carbon to zero.
     {
-      const Real c = kcr_[3] * g.C + kph_[iph_C] * g.C +
+      const Real a = kcr_[3] + kph_[iph_C];
+      const Real c = a * (g.C + y[IC_plus]) +
                      k2body_[i2body_Hep_CO] * y[IHE_plus] * y[ICO];
       const Real d = k2body_[i2body_Cp_H2] * y[IH2] +
                      k2body_[i2body_Cp_OH] * y[IOHx] +
                      k2body_[i2body_Cp_e] * g.e +
-                     k2body_[i2body_Cp_H2_e] * y[IH2] + kgr_[igr_Cp];
+                     k2body_[i2body_Cp_H2_e] * y[IH2] + kgr_[igr_Cp] + a;
       y[IC_plus] = BEStep_(y_n[IC_plus], u * c, u * d, h, exact_map);
       refresh();
     }
