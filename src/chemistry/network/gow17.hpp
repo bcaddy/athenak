@@ -370,7 +370,7 @@ class GOW17Network {
     // The table itself is owned by Chemistry and injected into this struct
     // after the cached copy is taken; see Chemistry::UpdateChemistry.
     output.use_thermo_table =
-        pin->GetOrAddBoolean("chemistry", "GOW17_thermo_table", false);
+        pin->GetOrAddBoolean("chemistry", "GOW17_thermo_table", true);
     return output;
   }
 

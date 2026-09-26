@@ -234,7 +234,7 @@ class SemiImplicit {
     settings.semi_implicit_renormalize =
         pin->GetOrAddBoolean(module, "semi_implicit_renormalize", true);
     settings.semi_implicit_gauss_seidel =
-        pin->GetOrAddBoolean(module, "semi_implicit_gauss_seidel", false);
+        pin->GetOrAddBoolean(module, "semi_implicit_gauss_seidel", true);
     settings.semi_implicit_hep_first =
         pin->GetOrAddBoolean(module, "semi_implicit_hep_first", true);
     settings.semi_implicit_exact_map =
@@ -254,7 +254,7 @@ class SemiImplicit {
     settings.semi_implicit_refresh_rates =
         pin->GetOrAddBoolean(module, "semi_implicit_refresh_rates", false);
     settings.semi_implicit_table_deriv =
-        pin->GetOrAddBoolean(module, "semi_implicit_table_deriv", false);
+        pin->GetOrAddBoolean(module, "semi_implicit_table_deriv", true);
     return settings;
   }
 

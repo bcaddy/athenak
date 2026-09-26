@@ -57,7 +57,7 @@ Chemistry::Chemistry(MeshBlockPack* ppack, ParameterInput* pin)
     H2Network::GetSettings(pin, pmy_pack);
   } else if (network == "GOW17") {
     GOW17Network::GetSettings(pin, pmy_pack);
-    if (pin->GetOrAddBoolean("chemistry", "GOW17_thermo_table", false)) {
+    if (pin->GetOrAddBoolean("chemistry", "GOW17_thermo_table", true)) {
       BuildThermoTable(thermo_table);
     }
   }
