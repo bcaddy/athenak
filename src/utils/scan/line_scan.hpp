@@ -20,8 +20,8 @@
 // truncated at the MeshBlock boundary -- ghost cells are excluded and lines are
 // NOT continued into neighboring MeshBlocks, so the whole operation is local to
 // a rank and needs no communication.
-#ifndef UTILS_LINE_SCAN_HPP_
-#define UTILS_LINE_SCAN_HPP_
+#ifndef UTILS_SCAN_LINE_SCAN_HPP_
+#define UTILS_SCAN_LINE_SCAN_HPP_
 
 #include <vector>
 
@@ -40,15 +40,37 @@ enum LineScanDir : int {
 };
 constexpr int nline_scan_dir = 6;
 
-//! \brief compute the six half-line exclusive prefix sums of each variable in
-//!    `vars`, storing the result in `out` (dims m, nvar, 6, k, j, i).
+//----------------------------------------------------------------------------------------
+//! \class LineScan
+//! \brief Container for a single cell-centered field, shaped like the (nmb, k,
+//! j, i) slice of Hydro/MHD u0 and w0 but with no variable axis.
 //!
-//! `vars` is a list of primitive (or conserved) field arrays to scan; all must
-//! share the MeshBlock index range of `ppack` and have the same number of
-//! variables. The output variable index is flattened across `vars` in order,
-//! i.e. if `vars[0]` has 5 variables then out indices 0..4 refer to `vars[0]`
-//! and 5.. refer to `vars[1]`.
-void LineScan(MeshBlockPack* ppack, const std::vector<DvceArray5D<Real>>& vars,
-              DvceArray6D<Real> out);
+//! Allocated once in the constructor and never resized, for the same reason
+//! Hydro/MHD allocate u0/w0 only in their constructor: the MeshBlock axis is
+//! sized to max(nmb_thispack, nmb_maxperrank), which is an upper bound for the
+//! whole run, so AMR refines into pre-allocated slots instead of growing the
+//! View.  See line_scan.cpp.
+//!
+//! Two consequences to be aware of:
+//!  - Only ACTIVE cells are allocated (nx1 x nx2 x nx3, no ghost zones), so
+//!  this field is
+//!    not boundary-communicated and cannot be used with a stencil that reads
+//!    ghosts.
+//!  - Kernels must iterate m over pmy_pack->nmb_thispack, never over
+//!  extent_int(0).  The
+//!    slots between those two are allocated for AMR headroom but hold no
+//!    MeshBlock, and their contents are undefined once refinement has moved
+//!    blocks around.
 
-#endif  // UTILS_LINE_SCAN_HPP_
+class LineScan {
+ public:
+  explicit LineScan(MeshBlockPack* ppack);
+  ~LineScan();
+
+  MeshBlockPack* pmy_pack;
+  DvceArray4D<Real> data;  // (nmb_maxperrank, nk, nj, ni), active cells only
+
+  void FillAll(Real value);  // write a constant into every element of data
+};
+
+#endif  // UTILS_SCAN_LINE_SCAN_HPP_

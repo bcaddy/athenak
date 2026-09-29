@@ -42,19 +42,21 @@
 // reversed). Each pass reads the input once and writes the output once, so the
 // whole operation is O(nmb * nvar * nkji) with a small constant.
 
+#include "utils/scan/line_scan.hpp"
+
+#include <algorithm>
+#include <vector>
+
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
 #include "mesh/meshblock_pack.hpp"
 
-void
+//----------------------------------------------------------------------------------------
+// x1 half-lines: exclusive scan along i, across the threads of a team.
+// One team per (m, n, k, j) line; the team's threads split the i range.
 
-    //----------------------------------------------------------------------------------------
-    // x1 half-lines: exclusive scan along i, across the threads of a team.
-    // One team per (m, n, k, j) line; the team's threads split the i range.
-
-    void LineScanX1(int nmb, int nvar, int nvar_offset,
-                    const RegionIndcs& indcs, const DvceArray5D<Real>& q,
-                    const DvceArray6D<Real>& out) {
+void LineScanX1(int nmb, int nvar, int nvar_offset, const RegionIndcs& indcs,
+                const DvceArray5D<Real>& q, const DvceArray6D<Real>& out) {
   const int is = indcs.is, ie = indcs.ie, nx1 = indcs.nx1;
   const int js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -179,3 +181,45 @@ void LineScanWithinBlock(MeshBlockPack* ppack,
   }
   return;
 }
+
+//----------------------------------------------------------------------------------------
+//! \brief LineScan constructor.  Allocates the field for the whole run and
+//! zeroes it.
+//!
+//! No resize logic is needed.  The extents below are constant for the duration
+//! of a run: Mesh::nmb_maxperrank is set once in
+//! Mesh::BuildTreeFrom{Scratch,Restart}() and Mesh::mb_indcs once in the Mesh
+//! constructor, and neither is modified by AMR.  This is the same reason
+//! Hydro/MHD allocate u0 and w0 only in their constructor -- the Views are
+//! sized for the most MeshBlocks this rank can ever hold, so refinement moves
+//! blocks into pre-allocated slots rather than growing the array.
+//!
+//! What AMR *does* change is pmy_pack->nmb_thispack, the number of leading
+//! MeshBlock slots that currently hold data.  Kernels must loop over
+//! nmb_thispack, never extent_int(0): the trailing slots are allocated but
+//! unused, and their contents are undefined.
+
+LineScan::LineScan(MeshBlockPack* ppack) : pmy_pack(ppack) {
+  Mesh* pm = pmy_pack->pmesh;
+  auto& indcs = pm->mb_indcs;
+
+  int nmb = std::max(pmy_pack->nmb_thispack, pm->nmb_maxperrank);
+  int ni = indcs.nx1;
+  int nj = (indcs.nx2 > 1) ? indcs.nx2 : 1;
+  int nk = (indcs.nx3 > 1) ? indcs.nx3 : 1;
+
+  // Kokkos Views are zero-initialized on construction
+  data = DvceArray4D<Real>("line_scan", nmb, nk, nj, ni);
+}
+
+//----------------------------------------------------------------------------------------
+//! \brief LineScan destructor
+
+LineScan::~LineScan() {}
+
+//----------------------------------------------------------------------------------------
+//! \fn void LineScan::FillAll(Real value)
+//! \brief Set every element of the field to a constant, including the trailing
+//! MeshBlock slots allocated for AMR headroom but not currently in use.
+
+void LineScan::FillAll(Real value) { Kokkos::deep_copy(data, value); }

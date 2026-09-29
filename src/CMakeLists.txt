@@ -183,6 +183,7 @@ add_executable(
         utils/cart_grid.cpp
         utils/watchdog.cpp
         utils/spherical_surface.cpp
+        utils/scan/line_scan.cpp
 
 
         z4c/compact_object_tracker.cpp
