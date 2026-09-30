@@ -121,15 +121,32 @@ namespace line_scan {
 //       });
 // }
 
-LineScan::LineScan(MeshBlockPack* ppack) : pmy_pack(ppack) {
-  // Allocate storage
-  {
-    auto& indcs = pmy_pack->pmesh->mb_indcs;
-    int nmb = std::max(pmy_pack->nmb_thispack, pmy_pack->pmesh->nmb_maxperrank);
-    int ni = indcs.nx1;
-    int nj = (indcs.nx2 > 1) ? indcs.nx2 : 1;
-    int nk = (indcs.nx3 > 1) ? indcs.nx3 : 1;
-    scan_data = DvceArray4D<Real>("scan_data", nmb, nk, nj, ni);
+LineScan::LineScan(MeshBlockPack* ppack, Direction direction, SumType sum_type)
+    : pmy_pack(ppack), direction(direction), sum_type(sum_type) {
+  auto& indcs = pmy_pack->pmesh->mb_indcs;
+
+  // Compute the maximum number of meshblocks
+  const int nmb =
+      std::max(pmy_pack->nmb_thispack, pmy_pack->pmesh->nmb_maxperrank);
+
+  // Determine the total number of real cells and add 2 in the direction of
+  // the scan to store the block wide sum and prefixes
+  int ni = indcs.nx1;
+  int nj = (indcs.nx2 > 1) ? indcs.nx2 : 1;
+  int nk = (indcs.nx3 > 1) ? indcs.nx3 : 1;
+  switch (direction) {
+    case Direction::I:
+      ni += 2;
+      break;
+    case Direction::J:
+      nj += 2;
+      break;
+    case Direction::K:
+      nk += 2;
+      break;
   }
+
+  // Allocate storage
+  scan_data = DvceArray4D<Real>("scan_data", nmb, nk, nj, ni);
 }
 }  // namespace line_scan

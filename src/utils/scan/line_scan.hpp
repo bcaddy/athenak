@@ -19,12 +19,22 @@ namespace line_scan {
 //----------------------------------------------------------------------------------------
 /*!
  * \class LineScan
- * \brief Perform either a prefix or suffix sum along a given axis.
+ * \brief Perform either a prefix or suffix sum along a given axis. All sums are
+ * exclusive
  *
  */
 class LineScan {
  public:
-  explicit LineScan(MeshBlockPack* ppack);
+  // Direction along which the scan is performed.
+  enum class Direction { I, J, K };
+  const Direction direction;
+
+  // Whether the sum is an exclusive prefix or suffix sum.
+  enum class SumType { Prefix, Suffix };
+  const SumType sum_type;
+
+  explicit LineScan(MeshBlockPack* ppack, Direction direction,
+                    SumType sum_type);
   ~LineScan() = default;
 
   MeshBlockPack* pmy_pack;
