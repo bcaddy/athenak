@@ -9,8 +9,6 @@
 
 #include "utils/scan/line_scan.hpp"
 
-#include <algorithm>
-
 namespace line_scan {
 // //----------------------------------------------------------------------------------------
 // // x1 half-lines: exclusive scan along i, across the threads of a team.
@@ -118,26 +116,5 @@ namespace line_scan {
 //         }
 //       });
 // }
-
-LineScan::LineScan(MeshBlockPack* ppack, Direction direction, ScanKind scan_kind)
-    : pmy_pack(ppack),
-      direction(direction),
-      scan_kind(scan_kind),
-      // Total number of real cells plus 2 in the direction of the scan to
-      // store the block wide sum and prefixes
-      nmb(std::max(pmy_pack->nmb_thispack, pmy_pack->pmesh->nmb_maxperrank)),
-      ni(ppack->pmesh->mb_indcs.nx1 + ((direction == Direction::I) ? 2 : 0)),
-      nj(ppack->pmesh->mb_indcs.nx2 + ((direction == Direction::J) ? 2 : 0)),
-      nk(ppack->pmesh->mb_indcs.nx3 + ((direction == Direction::K) ? 2 : 0)),
-      // Real cells start at 1 in the scan direction (index 0 and n-1 hold the
-      // block wide sum and prefixes) and at 0 otherwise
-      is((direction == Direction::I) ? 1 : 0),
-      ie(is + ppack->pmesh->mb_indcs.nx1 - 1),
-      js((direction == Direction::J) ? 1 : 0),
-      je(js + ppack->pmesh->mb_indcs.nx2 - 1),
-      ks((direction == Direction::K) ? 1 : 0),
-      ke(ks + ppack->pmesh->mb_indcs.nx3 - 1),
-      // Allocate storage
-      scan_data("scan_data", nmb, nk, nj, ni) {}
 
 }  // namespace line_scan
