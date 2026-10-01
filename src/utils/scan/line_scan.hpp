@@ -11,7 +11,9 @@
 #define UTILS_SCAN_LINE_SCAN_HPP_
 
 #include "athena.hpp"
+#include "hydro/hydro.hpp"
 #include "mesh/mesh.hpp"
+#include "mhd/mhd.hpp"
 
 namespace line_scan {
 //----------------------------------------------------------------------------------------
@@ -51,23 +53,33 @@ class LineScan {
   // Run the block local scan, primarily selects the proper function to run
   void BlockLocalScan();
   // The functions for running each scan in each direction
-  // In place exclusive prefix sum along i of the real cells in each meshblock.
-  // The block wide sum is stored in the upper ghost cell, ie+1
+  // Exclusive prefix sum along i of the MHD/Hydro density in the real cells of
+  // each meshblock, stored in scan_data. The block wide sum is stored in the
+  // upper ghost cell, ie+1
   void BlockLocalScan_I_Prefix() {
     // Local copies so the device lambda doesn't capture the host `this` pointer
     auto scan_data_ = scan_data;
     const int is_ = is, ni_ = ni;
 
+    // Density source and the offsets from scan_data indices to its indices,
+    // which include ghost cells
+    auto& indcs = pmy_pack->pmesh->mb_indcs;
+    auto u0_ =
+        (pmy_pack->pmhd != nullptr) ? pmy_pack->pmhd->u0 : pmy_pack->phydro->u0;
+
+    // The offsets for the hydro grid to account for ghost cells
+    const int ioff = indcs.is - is, joff = indcs.js - js, koff = indcs.ks - ks;
+
     par_for_outer(
-        "BlockLocalScan_I_Prefix", DevExeSpace(), 0, 0, 0, (nmb - 1), ks, ke, js, je,
+        "BlockLocalScan_I_Prefix", DevExeSpace(), 0, 0, 0, (nmb - 1), ks, ke,
+        js, je,
         KOKKOS_LAMBDA(TeamMember_t t, const int m, const int k, const int j) {
           // Scan through the upper ghost cell, ni-1, so the exclusive prefix
           // stored there is the total sum along the line
           Kokkos::parallel_scan(
               Kokkos::TeamThreadRange(t, is_, ni_),
               [=](const int i, Real& update, const bool final) {
-                // Read before writing since the scan is done in place
-                const Real x = scan_data_(m, k, j, i);
+                const Real x = u0_(m, IDN, k + koff, j + joff, i + ioff);
                 if (final) {
                   scan_data_(m, k, j, i) = update;
                 }
@@ -75,11 +87,11 @@ class LineScan {
               });
         });
   }
-// void BlockLocalScan_J_Prefix();
-// void BlockLocalScan_K_Prefix();
-// void BlockLocalScan_I_Suffix();
-// void BlockLocalScan_J_Suffix();
-// void BlockLocalScan_K_Suffix();
+  // void BlockLocalScan_J_Prefix();
+  // void BlockLocalScan_K_Prefix();
+  // void BlockLocalScan_I_Suffix();
+  // void BlockLocalScan_J_Suffix();
+  // void BlockLocalScan_K_Suffix();
 };
 }  // namespace line_scan
 #endif  // UTILS_SCAN_LINE_SCAN_HPP_
