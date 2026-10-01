@@ -89,7 +89,43 @@ class LineScan {
   }
   // void BlockLocalScan_J_Prefix();
   // void BlockLocalScan_K_Prefix();
-  // void BlockLocalScan_I_Suffix();
+
+  // Exclusive suffix sum along i of the MHD/Hydro density in the real cells of
+  // each meshblock, stored in scan_data. The block wide sum is stored in the
+  // lower ghost cell, is-1
+  void BlockLocalScan_I_Suffix() {
+    // Local copies so the device lambda doesn't capture the host `this` pointer
+    auto scan_data_ = scan_data;
+    const int ie_ = ie;
+
+    // Density source and the offsets from scan_data indices to its indices,
+    // which include ghost cells
+    auto& indcs = pmy_pack->pmesh->mb_indcs;
+    auto u0_ =
+        (pmy_pack->pmhd != nullptr) ? pmy_pack->pmhd->u0 : pmy_pack->phydro->u0;
+
+    // The offsets for the hydro grid to account for ghost cells
+    const int ioff = indcs.is - is, joff = indcs.js - js, koff = indcs.ks - ks;
+
+    par_for_outer(
+        "BlockLocalScan_I_Suffix", DevExeSpace(), 0, 0, 0, (nmb - 1), ks, ke,
+        js, je,
+        KOKKOS_LAMBDA(TeamMember_t t, const int m, const int k, const int j) {
+          // Scan with the index reversed, from ie down through the lower ghost
+          // cell, 0, so the exclusive suffix stored there is the total sum
+          // along the line
+          Kokkos::parallel_scan(
+              Kokkos::TeamThreadRange(t, 0, ie_ + 1),
+              [=](const int p, Real& update, const bool final) {
+                const int i = ie_ - p;
+                const Real x = u0_(m, IDN, k + koff, j + joff, i + ioff);
+                if (final) {
+                  scan_data_(m, k, j, i) = update;
+                }
+                update += x;
+              });
+        });
+  }
   // void BlockLocalScan_J_Suffix();
   // void BlockLocalScan_K_Suffix();
 };

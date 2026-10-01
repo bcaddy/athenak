@@ -155,9 +155,9 @@ void LineScan::BlockLocalScan() {
     // case key(Direction::K, SumType::Prefix):
     //   BlockLocalScan_K_Prefix();
     //   break;
-    // case key(Direction::I, SumType::Suffix):
-    //   BlockLocalScan_I_Suffix();
-    //   break;
+    case key(Direction::I, SumType::Suffix):
+      BlockLocalScan_I_Suffix();
+      break;
     // case key(Direction::J, SumType::Suffix):
     //   BlockLocalScan_J_Suffix();
     //   break;
