@@ -11,8 +11,6 @@
 
 #include <algorithm>
 
-#include "athena.hpp"
-
 namespace line_scan {
 //----------------------------------------------------------------------------------------
 // x1 half-lines: exclusive scan along i, across the threads of a team.

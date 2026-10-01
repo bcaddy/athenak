@@ -13,8 +13,6 @@
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
 
-class MeshBlockPack;
-
 namespace line_scan {
 //----------------------------------------------------------------------------------------
 /*!
