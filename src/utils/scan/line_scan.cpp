@@ -12,15 +12,15 @@
 #include <algorithm>
 
 namespace line_scan {
-//----------------------------------------------------------------------------------------
-// x1 half-lines: exclusive scan along i, across the threads of a team.
-// One team per (m, n, k, j) line; the team's threads split the i range.
+// //----------------------------------------------------------------------------------------
+// // x1 half-lines: exclusive scan along i, across the threads of a team.
+// // One team per (m, n, k, j) line; the team's threads split the i range.
 
-// void LineScanX1(int nmb, int nvar, int nvar_offset, const RegionIndcs& indcs,
-//                 const DvceArray5D<Real>& q, const DvceArray6D<Real>& out) {
-//   const int is = indcs.is, ie = indcs.ie, nx1 = indcs.nx1;
-//   const int js = indcs.js, je = indcs.je;
-//   const int ks = indcs.ks, ke = indcs.ke;
+// // void LineScanX1(int nmb, int nvar, int nvar_offset, const RegionIndcs& indcs,
+// //                 const DvceArray5D<Real>& q, const DvceArray6D<Real>& out) {
+// //   const int is = indcs.is, ie = indcs.ie, nx1 = indcs.nx1;
+// //   const int js = indcs.js, je = indcs.je;
+// //   const int ks = indcs.ks, ke = indcs.ke;
 
 //   // 4D outer loop: teams over (m, n, k, j), scan over i inside
 //   par_for_outer(
@@ -42,7 +42,7 @@ namespace line_scan {
 //                               });
 
 //         // PLUS_X1: same scan with the index reversed, giving the suffix sum
-//         to
+//         // to
 //         // the high face
 //         Kokkos::parallel_scan(Kokkos::TeamThreadRange(t, 0, nx1),
 //                               [=](const int p, Real& update, const bool
@@ -69,7 +69,7 @@ namespace line_scan {
 
 //   // 4D par_for decomposes the flat index as (n,k,j,i) with i fastest; the
 //   // ranges are chosen so those map to (m, n_var, k, i) and neighbouring
-//   threads
+//   // threads
 //   // hold neighbouring i
 //   par_for(
 //       "line_scan_x2", DevExeSpace(), 0, (nmb - 1), 0, (nvar - 1), ks, ke, is,
@@ -100,7 +100,7 @@ namespace line_scan {
 
 //   // 4D par_for decomposes the flat index as (n,k,j,i) with i fastest; the
 //   // ranges are chosen so those map to (m, n_var, j, i) and neighbouring
-//   threads
+//   // threads
 //   // hold neighbouring i
 //   par_for(
 //       "line_scan_x3", DevExeSpace(), 0, (nmb - 1), 0, (nvar - 1), js, je, is,
@@ -120,31 +120,51 @@ namespace line_scan {
 // }
 
 LineScan::LineScan(MeshBlockPack* ppack, Direction direction, SumType sum_type)
-    : pmy_pack(ppack), direction(direction), sum_type(sum_type) {
-  auto& indcs = pmy_pack->pmesh->mb_indcs;
+    : pmy_pack(ppack),
+      direction(direction),
+      sum_type(sum_type),
+      // Total number of real cells plus 2 in the direction of the scan to
+      // store the block wide sum and prefixes
+      nmb(std::max(pmy_pack->nmb_thispack, pmy_pack->pmesh->nmb_maxperrank)),
+      ni(ppack->pmesh->mb_indcs.nx1 + ((direction == Direction::I) ? 2 : 0)),
+      nj(ppack->pmesh->mb_indcs.nx2 + ((direction == Direction::J) ? 2 : 0)),
+      nk(ppack->pmesh->mb_indcs.nx3 + ((direction == Direction::K) ? 2 : 0)),
+      // Real cells start at 1 in the scan direction (index 0 and n-1 hold the
+      // block wide sum and prefixes) and at 0 otherwise
+      is((direction == Direction::I) ? 1 : 0),
+      ie(is + ppack->pmesh->mb_indcs.nx1 - 1),
+      js((direction == Direction::J) ? 1 : 0),
+      je(js + ppack->pmesh->mb_indcs.nx2 - 1),
+      ks((direction == Direction::K) ? 1 : 0),
+      ke(ks + ppack->pmesh->mb_indcs.nx3 - 1),
+      // Allocate storage
+      scan_data("scan_data", nmb, nk, nj, ni) {}
 
-  // Compute the maximum number of meshblocks
-  const int nmb =
-      std::max(pmy_pack->nmb_thispack, pmy_pack->pmesh->nmb_maxperrank);
-
-  // Determine the total number of real cells and add 2 in the direction of
-  // the scan to store the block wide sum and prefixes
-  int ni = indcs.nx1;
-  int nj = (indcs.nx2 > 1) ? indcs.nx2 : 1;
-  int nk = (indcs.nx3 > 1) ? indcs.nx3 : 1;
-  switch (direction) {
-    case Direction::I:
-      ni += 2;
+void LineScan::BlockLocalScan() {
+  // Based on direction and SumType call the proper function
+  constexpr auto key = [](Direction c, SumType s) -> int {
+    return (static_cast<int>(c) << 8) | static_cast<int>(s);
+  };
+  switch (key(direction, sum_type)) {
+    case key(Direction::I, SumType::Prefix):
+      BlockLocalScan_I_Prefix();
       break;
-    case Direction::J:
-      nj += 2;
-      break;
-    case Direction::K:
-      nk += 2;
-      break;
+    // case key(Direction::J, SumType::Prefix):
+    //   BlockLocalScan_J_Prefix();
+    //   break;
+    // case key(Direction::K, SumType::Prefix):
+    //   BlockLocalScan_K_Prefix();
+    //   break;
+    // case key(Direction::I, SumType::Suffix):
+    //   BlockLocalScan_I_Suffix();
+    //   break;
+    // case key(Direction::J, SumType::Suffix):
+    //   BlockLocalScan_J_Suffix();
+    //   break;
+    // case key(Direction::K, SumType::Suffix):
+    //   BlockLocalScan_K_Suffix();
+    //   break;
   }
-
-  // Allocate storage
-  scan_data = DvceArray4D<Real>("scan_data", nmb, nk, nj, ni);
 }
+
 }  // namespace line_scan
