@@ -119,10 +119,10 @@ namespace line_scan {
 //       });
 // }
 
-LineScan::LineScan(MeshBlockPack* ppack, Direction direction, SumType sum_type)
+LineScan::LineScan(MeshBlockPack* ppack, Direction direction, ScanKind scan_kind)
     : pmy_pack(ppack),
       direction(direction),
-      sum_type(sum_type),
+      scan_kind(scan_kind),
       // Total number of real cells plus 2 in the direction of the scan to
       // store the block wide sum and prefixes
       nmb(std::max(pmy_pack->nmb_thispack, pmy_pack->pmesh->nmb_maxperrank)),
@@ -139,32 +139,5 @@ LineScan::LineScan(MeshBlockPack* ppack, Direction direction, SumType sum_type)
       ke(ks + ppack->pmesh->mb_indcs.nx3 - 1),
       // Allocate storage
       scan_data("scan_data", nmb, nk, nj, ni) {}
-
-void LineScan::BlockLocalScan() {
-  // Based on direction and SumType call the proper function
-  constexpr auto key = [](Direction c, SumType s) -> int {
-    return (static_cast<int>(c) << 8) | static_cast<int>(s);
-  };
-  switch (key(direction, sum_type)) {
-    case key(Direction::I, SumType::Prefix):
-      BlockLocalScan_I_Prefix();
-      break;
-    // case key(Direction::J, SumType::Prefix):
-    //   BlockLocalScan_J_Prefix();
-    //   break;
-    // case key(Direction::K, SumType::Prefix):
-    //   BlockLocalScan_K_Prefix();
-    //   break;
-    case key(Direction::I, SumType::Suffix):
-      BlockLocalScan_I_Suffix();
-      break;
-    // case key(Direction::J, SumType::Suffix):
-    //   BlockLocalScan_J_Suffix();
-    //   break;
-    // case key(Direction::K, SumType::Suffix):
-    //   BlockLocalScan_K_Suffix();
-    //   break;
-  }
-}
 
 }  // namespace line_scan

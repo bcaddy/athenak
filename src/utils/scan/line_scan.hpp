@@ -11,9 +11,7 @@
 #define UTILS_SCAN_LINE_SCAN_HPP_
 
 #include "athena.hpp"
-#include "hydro/hydro.hpp"
 #include "mesh/mesh.hpp"
-#include "mhd/mhd.hpp"
 
 namespace line_scan {
 //----------------------------------------------------------------------------------------
@@ -30,11 +28,11 @@ class LineScan {
   const Direction direction;
 
   // Whether the sum is an exclusive prefix or suffix sum.
-  enum class SumType { Prefix, Suffix };
-  const SumType sum_type;
+  enum class ScanKind { Prefix, Suffix };
+  const ScanKind scan_kind;
 
   explicit LineScan(MeshBlockPack* ppack, Direction direction,
-                    SumType sum_type);
+                    ScanKind scan_kind);
   ~LineScan() = default;
 
   MeshBlockPack* pmy_pack;
@@ -50,24 +48,71 @@ class LineScan {
   // Must be declared after nmb, ni, nj, nk since it is initialized from them
   const DvceArray4D<Real> scan_data;
 
-  // Run the block local scan, primarily selects the proper function to run
-  void BlockLocalScan();
-  // The functions for running each scan in each direction
-  // Exclusive prefix sum along i of the MHD/Hydro density in the real cells of
-  // each meshblock, stored in scan_data. The block wide sum is stored in the
-  // upper ghost cell, ie+1
-  void BlockLocalScan_I_Prefix() {
+  /*!
+   * \brief Run the block local scan, selecting the function for the direction
+   * and scan kind.
+   *
+   * \tparam ValueFunc Type of a device callable that returns the value to scan
+   * at a cell. A KOKKOS_LAMBDA must have the signature
+   * \code
+   * KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) -> Real
+   * \endcode
+   * where m is the meshblock and k, j, i are MeshBlock (mb_indcs) indices,
+   * which include ghost cells.
+   * \param value_func The callable that computes the value to scan.
+   */
+  template <typename ValueFunc>
+  void BlockLocalScan(const ValueFunc& value_func) {
+    // Based on direction and ScanKind call the proper function
+    constexpr auto key = [](Direction c, ScanKind s) -> int {
+      return (static_cast<int>(c) << 8) | static_cast<int>(s);
+    };
+    switch (key(direction, scan_kind)) {
+      case key(Direction::I, ScanKind::Prefix):
+        BlockLocalScan_I_Prefix(value_func);
+        break;
+      // case key(Direction::J, ScanKind::Prefix):
+      //   BlockLocalScan_J_Prefix(value_func);
+      //   break;
+      // case key(Direction::K, ScanKind::Prefix):
+      //   BlockLocalScan_K_Prefix(value_func);
+      //   break;
+      case key(Direction::I, ScanKind::Suffix):
+        BlockLocalScan_I_Suffix(value_func);
+        break;
+        // case key(Direction::J, ScanKind::Suffix):
+        //   BlockLocalScan_J_Suffix(value_func);
+        //   break;
+        // case key(Direction::K, ScanKind::Suffix):
+        //   BlockLocalScan_K_Suffix(value_func);
+        //   break;
+    }
+  }
+  
+  // ===== The functions for running each scan in each direction =====
+  /*!
+   * \brief Exclusive prefix sum along i of value_func in the real cells of each
+   * meshblock, stored in scan_data. The block wide sum is stored in the upper
+   * ghost cell, ie+1.
+   *
+   * \tparam ValueFunc Type of a device callable that returns the value to scan
+   * at a cell. A KOKKOS_LAMBDA must have the signature
+   * \code
+   * KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) -> Real
+   * \endcode
+   * where m is the meshblock and k, j, i are MeshBlock (mb_indcs) indices,
+   * which include ghost cells.
+   * \param value_func The callable that computes the value to scan.
+   */
+  template <typename ValueFunc>
+  void BlockLocalScan_I_Prefix(const ValueFunc& value_func) {
     // Local copies so the device lambda doesn't capture the host `this` pointer
     auto scan_data_ = scan_data;
     const int is_ = is, ni_ = ni;
 
-    // Density source and the offsets from scan_data indices to its indices,
-    // which include ghost cells
+    // The offsets from scan_data indices to MeshBlock indices, which include
+    // ghost cells
     auto& indcs = pmy_pack->pmesh->mb_indcs;
-    auto u0_ =
-        (pmy_pack->pmhd != nullptr) ? pmy_pack->pmhd->u0 : pmy_pack->phydro->u0;
-
-    // The offsets for the hydro grid to account for ghost cells
     const int ioff = indcs.is - is, joff = indcs.js - js, koff = indcs.ks - ks;
 
     par_for_outer(
@@ -79,7 +124,7 @@ class LineScan {
           Kokkos::parallel_scan(
               Kokkos::TeamThreadRange(t, is_, ni_),
               [=](const int i, Real& update, const bool final) {
-                const Real x = u0_(m, IDN, k + koff, j + joff, i + ioff);
+                const Real x = value_func(m, k + koff, j + joff, i + ioff);
                 if (final) {
                   scan_data_(m, k, j, i) = update;
                 }
@@ -90,21 +135,29 @@ class LineScan {
   // void BlockLocalScan_J_Prefix();
   // void BlockLocalScan_K_Prefix();
 
-  // Exclusive suffix sum along i of the MHD/Hydro density in the real cells of
-  // each meshblock, stored in scan_data. The block wide sum is stored in the
-  // lower ghost cell, is-1
-  void BlockLocalScan_I_Suffix() {
+  /*!
+   * \brief Exclusive suffix sum along i of value_func in the real cells of each
+   * meshblock, stored in scan_data. The block wide sum is stored in the lower
+   * ghost cell, is-1.
+   *
+   * \tparam ValueFunc Type of a device callable that returns the value to scan
+   * at a cell. A KOKKOS_LAMBDA must have the signature
+   * \code
+   * KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) -> Real
+   * \endcode
+   * where m is the meshblock and k, j, i are MeshBlock (mb_indcs) indices,
+   * which include ghost cells.
+   * \param value_func The callable that computes the value to scan.
+   */
+  template <typename ValueFunc>
+  void BlockLocalScan_I_Suffix(const ValueFunc& value_func) {
     // Local copies so the device lambda doesn't capture the host `this` pointer
     auto scan_data_ = scan_data;
     const int ie_ = ie;
 
-    // Density source and the offsets from scan_data indices to its indices,
-    // which include ghost cells
+    // The offsets from scan_data indices to MeshBlock indices, which include
+    // ghost cells
     auto& indcs = pmy_pack->pmesh->mb_indcs;
-    auto u0_ =
-        (pmy_pack->pmhd != nullptr) ? pmy_pack->pmhd->u0 : pmy_pack->phydro->u0;
-
-    // The offsets for the hydro grid to account for ghost cells
     const int ioff = indcs.is - is, joff = indcs.js - js, koff = indcs.ks - ks;
 
     par_for_outer(
@@ -118,7 +171,7 @@ class LineScan {
               Kokkos::TeamThreadRange(t, 0, ie_ + 1),
               [=](const int p, Real& update, const bool final) {
                 const int i = ie_ - p;
-                const Real x = u0_(m, IDN, k + koff, j + joff, i + ioff);
+                const Real x = value_func(m, k + koff, j + joff, i + ioff);
                 if (final) {
                   scan_data_(m, k, j, i) = update;
                 }
