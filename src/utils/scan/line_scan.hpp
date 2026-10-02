@@ -26,14 +26,16 @@ enum class ScanKind { Prefix, Suffix };
  * \brief Perform either an exclusive prefix or exclusive suffix scan along a
  * given axis
  *
- * Since Kind is given explicitly, ValueFunc must be too, e.g. with decltype:
+ * Since Dir and Kind are given explicitly, ValueFunc must be too, e.g. with
+ * decltype:
  * \code
  * auto f = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i)
  *     -> Real { return u0(m, IDN, k, j, i); };
- * line_scan::LineScan<line_scan::ScanKind::Prefix, decltype(f)> scan(
- *     pmbp, line_scan::Direction::I, f);
+ * line_scan::LineScan<line_scan::Direction::I, line_scan::ScanKind::Prefix,
+ *                     decltype(f)> scan(pmbp, f);
  * \endcode
  *
+ * \tparam Dir The direction along which the scan is performed.
  * \tparam Kind Whether the scan is an exclusive prefix or suffix scan.
  * \tparam ValueFunc Type of a device callable that returns the value to scan at
  * a cell. A KOKKOS_LAMBDA must have the signature
@@ -43,32 +45,31 @@ enum class ScanKind { Prefix, Suffix };
  * where m is the meshblock and k, j, i are MeshBlock (mb_indcs) indices, which
  * include ghost cells.
  */
-template <ScanKind Kind, typename ValueFunc>
+template <Direction Dir, ScanKind Kind, typename ValueFunc>
 class LineScan {
  public:
-  const Direction direction;
+  static constexpr Direction direction = Dir;
   static constexpr ScanKind scan_kind = Kind;
 
   /*!
    * \param value_func The callable that computes the value to scan.
    */
-  LineScan(MeshBlockPack* ppack, Direction direction, const ValueFunc& value_func)
+  LineScan(MeshBlockPack* ppack, const ValueFunc& value_func)
       : pmy_pack(ppack),
-        direction(direction),
         value_func(value_func),
         nmb(std::max(pmy_pack->nmb_thispack, pmy_pack->pmesh->nmb_maxperrank)),
         // Number of real cells plus 2 in the scan direction to store the block
         // wide scan
-        ni(ppack->pmesh->mb_indcs.nx1 + ((direction == Direction::I) ? 2 : 0)),
-        nj(ppack->pmesh->mb_indcs.nx2 + ((direction == Direction::J) ? 2 : 0)),
-        nk(ppack->pmesh->mb_indcs.nx3 + ((direction == Direction::K) ? 2 : 0)),
+        ni(ppack->pmesh->mb_indcs.nx1 + ((Dir == Direction::I) ? 2 : 0)),
+        nj(ppack->pmesh->mb_indcs.nx2 + ((Dir == Direction::J) ? 2 : 0)),
+        nk(ppack->pmesh->mb_indcs.nx3 + ((Dir == Direction::K) ? 2 : 0)),
         // Real cells start at 1 in the scan direction (index 0 and n-1 hold the
         // block wide scan) and at 0 otherwise
-        is((direction == Direction::I) ? 1 : 0),
+        is((Dir == Direction::I) ? 1 : 0),
         ie(is + ppack->pmesh->mb_indcs.nx1 - 1),
-        js((direction == Direction::J) ? 1 : 0),
+        js((Dir == Direction::J) ? 1 : 0),
         je(js + ppack->pmesh->mb_indcs.nx2 - 1),
-        ks((direction == Direction::K) ? 1 : 0),
+        ks((Dir == Direction::K) ? 1 : 0),
         ke(ks + ppack->pmesh->mb_indcs.nx3 - 1),
         // Allocate storage
         scan_data("scan_data", nmb, nk, nj, ni) {}
@@ -93,13 +94,10 @@ class LineScan {
    * \brief Run the block local scan in the chosen direction.
    */
   void BlockLocalScan() {
-    switch (direction) {
-      case Direction::I:
-        BlockLocalScan_I();
-        break;
-      case Direction::J:  // not implemented yet
-      case Direction::K:  // not implemented yet
-        break;
+    if constexpr (Dir == Direction::I) {
+      BlockLocalScan_I();
+    } else {
+      BlockLocalScan_JK();
     }
   }
 
@@ -165,8 +163,54 @@ class LineScan {
               },
               total);
           Kokkos::single(Kokkos::PerThread(t), [=]() {
-            scan_data_(m, k, j, (Kind == ScanKind::Suffix) ? is_ - 1 : ie_ + 1) = total;
+            scan_data_(m, k, j,
+                       (Kind == ScanKind::Suffix) ? is_ - 1 : ie_ + 1) = total;
           });
+        });
+  }
+
+  /*!
+   * \brief Exclusive prefix or suffix scan along j or k of value_func over the
+   * real cells of each meshblock, stored in scan_data. The line total is stored
+   * in the ghost cell past the end of the scan, as in BlockLocalScan_I.
+   *
+   * Each line is handled by one thread that steps along it serially, so
+   * value_func is called once per cell. Neighbouring threads handle
+   * neighbouring i, so their loads and stores are coalesced. (This layout is
+   * 3-9x slower than BlockLocalScan_I for scans along i, where neighbouring
+   * threads would be a whole line apart.)
+   */
+  void BlockLocalScan_JK() {
+    // Local copies so the device lambda doesn't capture the host `this` pointer
+    auto scan_data_ = scan_data;
+    auto value_func_ = value_func;
+    // Number of real cells along the line
+    auto& indcs = pmy_pack->pmesh->mb_indcs;
+    const int n = (Dir == Direction::J) ? indcs.nx2 : indcs.nx3;
+
+    // Offsets from scan_data indices to MeshBlock indices, which include ghosts
+    const int ioff = indcs.is - is, joff = indcs.js - js, koff = indcs.ks - ks;
+
+    // One thread per line: the scan direction's range is just its first real
+    // cell
+    par_for(
+        "BlockLocalScan_JK", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, ks,
+        (Dir == Direction::K) ? ks : ke, js, (Dir == Direction::J) ? js : je,
+        is, ie,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+          Real sum = 0.0;
+          // s == n writes the line total to the ghost cell past the end
+          for (int s = 0; s <= n; ++s) {
+            // Offset from the first real cell, walking backwards for a
+            // suffix scan
+            const int p = (Kind == ScanKind::Suffix) ? n - 1 - s : s;
+            const int kp = (Dir == Direction::K) ? k + p : k;
+            const int jp = (Dir == Direction::J) ? j + p : j;
+            scan_data_(m, kp, jp, i) = sum;
+            if (s < n) {
+              sum += value_func_(m, kp + koff, jp + joff, i + ioff);
+            }
+          }
         });
   }
 };
