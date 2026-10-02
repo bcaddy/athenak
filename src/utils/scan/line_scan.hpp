@@ -15,12 +15,9 @@
 #include "mesh/mesh.hpp"
 
 namespace line_scan {
-// Direction along which the scan is performed. Outside of LineScan so it can be
-// named without the class template arguments
+// Scan direction and kind. Outside of LineScan so they can be named without the
+// class template arguments
 enum class Direction { I, J, K };
-
-// Whether the scan is an exclusive prefix or suffix scan. Outside of LineScan
-// so it can be named without the class template arguments
 enum class ScanKind { Prefix, Suffix };
 
 //----------------------------------------------------------------------------------------
@@ -29,6 +26,15 @@ enum class ScanKind { Prefix, Suffix };
  * \brief Perform either an exclusive prefix or exclusive suffix scan along a
  * given axis
  *
+ * Since Kind is given explicitly, ValueFunc must be too, e.g. with decltype:
+ * \code
+ * auto f = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i)
+ *     -> Real { return u0(m, IDN, k, j, i); };
+ * line_scan::LineScan<line_scan::ScanKind::Prefix, decltype(f)> scan(
+ *     pmbp, line_scan::Direction::I, f);
+ * \endcode
+ *
+ * \tparam Kind Whether the scan is an exclusive prefix or suffix scan.
  * \tparam ValueFunc Type of a device callable that returns the value to scan at
  * a cell. A KOKKOS_LAMBDA must have the signature
  * \code
@@ -37,24 +43,22 @@ enum class ScanKind { Prefix, Suffix };
  * where m is the meshblock and k, j, i are MeshBlock (mb_indcs) indices, which
  * include ghost cells.
  */
-template <typename ValueFunc>
+template <ScanKind Kind, typename ValueFunc>
 class LineScan {
  public:
   const Direction direction;
-  const ScanKind scan_kind;
+  static constexpr ScanKind scan_kind = Kind;
 
   /*!
    * \param value_func The callable that computes the value to scan.
    */
-  LineScan(MeshBlockPack* ppack, Direction direction, ScanKind scan_kind,
-           const ValueFunc& value_func)
+  LineScan(MeshBlockPack* ppack, Direction direction, const ValueFunc& value_func)
       : pmy_pack(ppack),
         direction(direction),
-        scan_kind(scan_kind),
         value_func(value_func),
-        // Total number of real cells plus 2 in the direction of the scan to
-        // store the block wide scan
         nmb(std::max(pmy_pack->nmb_thispack, pmy_pack->pmesh->nmb_maxperrank)),
+        // Number of real cells plus 2 in the scan direction to store the block
+        // wide scan
         ni(ppack->pmesh->mb_indcs.nx1 + ((direction == Direction::I) ? 2 : 0)),
         nj(ppack->pmesh->mb_indcs.nx2 + ((direction == Direction::J) ? 2 : 0)),
         nk(ppack->pmesh->mb_indcs.nx3 + ((direction == Direction::K) ? 2 : 0)),
@@ -68,7 +72,6 @@ class LineScan {
         ke(ks + ppack->pmesh->mb_indcs.nx3 - 1),
         // Allocate storage
         scan_data("scan_data", nmb, nk, nj, ni) {}
-  ~LineScan() = default;
 
   MeshBlockPack* pmy_pack;
 
@@ -87,130 +90,85 @@ class LineScan {
   const DvceArray4D<Real> scan_data;
 
   /*!
-   * \brief Run the block local scan, selecting the function for the direction
-   * and scan kind.
+   * \brief Run the block local scan in the chosen direction.
    */
   void BlockLocalScan() {
-    // Based on direction and ScanKind call the proper function
-    constexpr auto key = [](Direction c, ScanKind s) -> int {
-      return (static_cast<int>(c) << 8) | static_cast<int>(s);
-    };
-    switch (key(direction, scan_kind)) {
-      case key(Direction::I, ScanKind::Prefix):
-        BlockLocalScan_I_Prefix();
+    switch (direction) {
+      case Direction::I:
+        BlockLocalScan_I();
         break;
-      // case key(Direction::J, ScanKind::Prefix):
-      //   BlockLocalScan_J_Prefix();
-      //   break;
-      // case key(Direction::K, ScanKind::Prefix):
-      //   BlockLocalScan_K_Prefix();
-      //   break;
-      case key(Direction::I, ScanKind::Suffix):
-        BlockLocalScan_I_Suffix();
+      case Direction::J:  // not implemented yet
+      case Direction::K:  // not implemented yet
         break;
-        // case key(Direction::J, ScanKind::Suffix):
-        //   BlockLocalScan_J_Suffix();
-        //   break;
-        // case key(Direction::K, ScanKind::Suffix):
-        //   BlockLocalScan_K_Suffix();
-        //   break;
     }
   }
 
-  // ===== The functions for running each scan in each direction =====
   /*!
-   * \brief Exclusive prefix scan along i with value_func in the real cells of
-   * each meshblock, stored in scan_data. The block wide scan is stored in the
-   * upper ghost cell, ie+1.
+   * \brief Exclusive prefix or suffix scan along i of value_func over the real
+   * cells of each meshblock, stored in scan_data. The line total is stored in
+   * the ghost cell past the end of the scan: ie+1 for a prefix scan, is-1 for a
+   * suffix scan.
+   *
+   * Each (m, k, j) line is handled by one team thread, with the thread's vector
+   * lanes splitting the line. This suits short lines (nx1 <= 32), where a whole
+   * team per line would leave most of its threads idle.
    */
-  void BlockLocalScan_I_Prefix() {
+  void BlockLocalScan_I() {
     // Local copies so the device lambda doesn't capture the host `this` pointer
     auto scan_data_ = scan_data;
     auto value_func_ = value_func;
-    const int is_ = is, ie_ = ie, ni_ = ni;
+    const int is_ = is, ie_ = ie, nj_ = nj, nk_ = nk;
+    const int nx = ie - is + 1;
+    // Only the meshblocks in use; scan_data is sized for the maximum, nmb
+    const int nlines = pmy_pack->nmb_thispack * nk * nj;
 
-    // The offsets from scan_data indices to MeshBlock indices, which include
-    // ghost cells
+    // Offsets from scan_data indices to MeshBlock indices, which include ghosts
     auto& indcs = pmy_pack->pmesh->mb_indcs;
     const int ioff = indcs.is - is, joff = indcs.js - js, koff = indcs.ks - ks;
 
-    par_for_outer(
-        "BlockLocalScan_I_Prefix", DevExeSpace(), 0, 0, 0, (nmb - 1), ks, ke,
-        js, je,
-        KOKKOS_LAMBDA(TeamMember_t t, const int m, const int k, const int j) {
-          // Evaluate value_func once per real cell, since parallel_scan may
-          // call its lambda more than once per index
-          Kokkos::parallel_for(
-              Kokkos::TeamThreadRange(t, is_, ie_ + 1), [=](const int i) {
-                scan_data_(m, k, j, i) =
-                    value_func_(m, k + koff, j + joff, i + ioff);
-              });
-          t.team_barrier();
+    // Vector length: the smallest power of two >= nx (Kokkos rounds down to a
+    // power of two), capped at the CUDA warp size and the backend maximum
+    const int vlen =
+        std::min({static_cast<int>(Kokkos::bit_ceil(static_cast<unsigned>(nx))),
+                  32, Kokkos::TeamPolicy<>::vector_length_max()});
 
-          // In place scan through the upper ghost cell, ni-1, so the exclusive
-          // prefix stored there is the total scan along the line
+    // About 128 threads per team. Host backends allow at most concurrency()
+    // threads per team (1 for Serial)
+    const int team_size = std::min(128 / vlen, DevExeSpace().concurrency());
+    const int n_league = (nlines + team_size - 1) / team_size;
+
+    // Perform the scan
+    Kokkos::parallel_for(
+        "BlockLocalScan_I",
+        Kokkos::TeamPolicy<>(DevExeSpace(), n_league, team_size, vlen),
+        KOKKOS_LAMBDA(TeamMember_t t) {
+          const int line = t.league_rank() * t.team_size() + t.team_rank();
+          if (line >= nlines) return;
+          const int m = line / (nk_ * nj_);
+          const int k = (line / nj_) % nk_;
+          const int j = line % nj_;
+
+          // value_func is called inside the scan, so it may run more than once
+          // per cell; profiling showed this is faster than evaluating it once
+          // into scan_data first for typical value_funcs. The range starts at 0
+          // since the CUDA vector scan ignores a nonzero start
+          Real total;
           Kokkos::parallel_scan(
-              Kokkos::TeamThreadRange(t, is_, ni_),
-              [=](const int i, Real& update, const bool final) {
-                // Read before writing since the scan is done in place
-                const Real x = scan_data_(m, k, j, i);
-                if (final) {
-                  scan_data_(m, k, j, i) = update;
-                }
-                update += x;
-              });
-        });
-  }
-  // void BlockLocalScan_J_Prefix();
-  // void BlockLocalScan_K_Prefix();
-
-  /*!
-   * \brief Exclusive suffix scan along i with value_func in the real cells of
-   * each meshblock, stored in scan_data. The block wide scan is stored in the
-   * lower ghost cell, is-1.
-   */
-  void BlockLocalScan_I_Suffix() {
-    // Local copies so the device lambda doesn't capture the host `this` pointer
-    auto scan_data_ = scan_data;
-    auto value_func_ = value_func;
-    const int is_ = is, ie_ = ie;
-
-    // The offsets from scan_data indices to MeshBlock indices, which include
-    // ghost cells
-    auto& indcs = pmy_pack->pmesh->mb_indcs;
-    const int ioff = indcs.is - is, joff = indcs.js - js, koff = indcs.ks - ks;
-
-    par_for_outer(
-        "BlockLocalScan_I_Suffix", DevExeSpace(), 0, 0, 0, (nmb - 1), ks, ke,
-        js, je,
-        KOKKOS_LAMBDA(TeamMember_t t, const int m, const int k, const int j) {
-          // Evaluate value_func once per real cell, since parallel_scan may
-          // call its lambda more than once per index
-          Kokkos::parallel_for(
-              Kokkos::TeamThreadRange(t, is_, ie_ + 1), [=](const int i) {
-                scan_data_(m, k, j, i) =
-                    value_func_(m, k + koff, j + joff, i + ioff);
-              });
-          t.team_barrier();
-
-          // In place scan with the index reversed, from ie down through the
-          // lower ghost cell, 0, so the exclusive suffix stored there is the
-          // total scan along the line
-          Kokkos::parallel_scan(
-              Kokkos::TeamThreadRange(t, 0, ie_ + 1),
+              Kokkos::ThreadVectorRange(t, nx),
               [=](const int p, Real& update, const bool final) {
-                const int i = ie_ - p;
-                // Read before writing since the scan is done in place
-                const Real x = scan_data_(m, k, j, i);
+                const int i = (Kind == ScanKind::Suffix) ? ie_ - p : is_ + p;
+                const Real x = value_func_(m, k + koff, j + joff, i + ioff);
                 if (final) {
                   scan_data_(m, k, j, i) = update;
                 }
                 update += x;
-              });
+              },
+              total);
+          Kokkos::single(Kokkos::PerThread(t), [=]() {
+            scan_data_(m, k, j, (Kind == ScanKind::Suffix) ? is_ - 1 : ie_ + 1) = total;
+          });
         });
   }
-  // void BlockLocalScan_J_Suffix();
-  // void BlockLocalScan_K_Suffix();
 };
 }  // namespace line_scan
 #endif  // UTILS_SCAN_LINE_SCAN_HPP_
