@@ -4,8 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file line_scan.hpp
-//  \brief Header file for exclusive prefix sums of cell-centered fields along
-//  cartisian directions.
+//  \brief Header file for exclusive prefix scans along any cartisian direction
 
 #ifndef UTILS_SCAN_LINE_SCAN_HPP_
 #define UTILS_SCAN_LINE_SCAN_HPP_
@@ -20,15 +19,15 @@ namespace line_scan {
 // named without the class template arguments
 enum class Direction { I, J, K };
 
-// Whether the sum is an exclusive prefix or suffix sum. Outside of LineScan so
-// it can be named without the class template arguments
+// Whether the scan is an exclusive prefix or suffix scan. Outside of LineScan
+// so it can be named without the class template arguments
 enum class ScanKind { Prefix, Suffix };
 
 //----------------------------------------------------------------------------------------
 /*!
  * \class LineScan
- * \brief Perform either a prefix or suffix sum along a given axis. All sums are
- * exclusive
+ * \brief Perform either an exclusive prefix or exclusive suffix scan along a
+ * given axis
  *
  * \tparam ValueFunc Type of a device callable that returns the value to scan at
  * a cell. A KOKKOS_LAMBDA must have the signature
@@ -54,13 +53,13 @@ class LineScan {
         scan_kind(scan_kind),
         value_func(value_func),
         // Total number of real cells plus 2 in the direction of the scan to
-        // store the block wide sum and prefixes
+        // store the block wide scan
         nmb(std::max(pmy_pack->nmb_thispack, pmy_pack->pmesh->nmb_maxperrank)),
         ni(ppack->pmesh->mb_indcs.nx1 + ((direction == Direction::I) ? 2 : 0)),
         nj(ppack->pmesh->mb_indcs.nx2 + ((direction == Direction::J) ? 2 : 0)),
         nk(ppack->pmesh->mb_indcs.nx3 + ((direction == Direction::K) ? 2 : 0)),
         // Real cells start at 1 in the scan direction (index 0 and n-1 hold the
-        // block wide sum and prefixes) and at 0 otherwise
+        // block wide scan) and at 0 otherwise
         is((direction == Direction::I) ? 1 : 0),
         ie(is + ppack->pmesh->mb_indcs.nx1 - 1),
         js((direction == Direction::J) ? 1 : 0),
@@ -120,15 +119,15 @@ class LineScan {
 
   // ===== The functions for running each scan in each direction =====
   /*!
-   * \brief Exclusive prefix sum along i of value_func in the real cells of each
-   * meshblock, stored in scan_data. The block wide sum is stored in the upper
-   * ghost cell, ie+1.
+   * \brief Exclusive prefix scan along i with value_func in the real cells of
+   * each meshblock, stored in scan_data. The block wide scan is stored in the
+   * upper ghost cell, ie+1.
    */
   void BlockLocalScan_I_Prefix() {
     // Local copies so the device lambda doesn't capture the host `this` pointer
     auto scan_data_ = scan_data;
     auto value_func_ = value_func;
-    const int is_ = is, ni_ = ni;
+    const int is_ = is, ie_ = ie, ni_ = ni;
 
     // The offsets from scan_data indices to MeshBlock indices, which include
     // ghost cells
@@ -139,12 +138,22 @@ class LineScan {
         "BlockLocalScan_I_Prefix", DevExeSpace(), 0, 0, 0, (nmb - 1), ks, ke,
         js, je,
         KOKKOS_LAMBDA(TeamMember_t t, const int m, const int k, const int j) {
-          // Scan through the upper ghost cell, ni-1, so the exclusive prefix
-          // stored there is the total sum along the line
+          // Evaluate value_func once per real cell, since parallel_scan may
+          // call its lambda more than once per index
+          Kokkos::parallel_for(
+              Kokkos::TeamThreadRange(t, is_, ie_ + 1), [=](const int i) {
+                scan_data_(m, k, j, i) =
+                    value_func_(m, k + koff, j + joff, i + ioff);
+              });
+          t.team_barrier();
+
+          // In place scan through the upper ghost cell, ni-1, so the exclusive
+          // prefix stored there is the total scan along the line
           Kokkos::parallel_scan(
               Kokkos::TeamThreadRange(t, is_, ni_),
               [=](const int i, Real& update, const bool final) {
-                const Real x = value_func_(m, k + koff, j + joff, i + ioff);
+                // Read before writing since the scan is done in place
+                const Real x = scan_data_(m, k, j, i);
                 if (final) {
                   scan_data_(m, k, j, i) = update;
                 }
@@ -156,15 +165,15 @@ class LineScan {
   // void BlockLocalScan_K_Prefix();
 
   /*!
-   * \brief Exclusive suffix sum along i of value_func in the real cells of each
-   * meshblock, stored in scan_data. The block wide sum is stored in the lower
-   * ghost cell, is-1.
+   * \brief Exclusive suffix scan along i with value_func in the real cells of
+   * each meshblock, stored in scan_data. The block wide scan is stored in the
+   * lower ghost cell, is-1.
    */
   void BlockLocalScan_I_Suffix() {
     // Local copies so the device lambda doesn't capture the host `this` pointer
     auto scan_data_ = scan_data;
     auto value_func_ = value_func;
-    const int ie_ = ie;
+    const int is_ = is, ie_ = ie;
 
     // The offsets from scan_data indices to MeshBlock indices, which include
     // ghost cells
@@ -175,14 +184,24 @@ class LineScan {
         "BlockLocalScan_I_Suffix", DevExeSpace(), 0, 0, 0, (nmb - 1), ks, ke,
         js, je,
         KOKKOS_LAMBDA(TeamMember_t t, const int m, const int k, const int j) {
-          // Scan with the index reversed, from ie down through the lower ghost
-          // cell, 0, so the exclusive suffix stored there is the total sum
-          // along the line
+          // Evaluate value_func once per real cell, since parallel_scan may
+          // call its lambda more than once per index
+          Kokkos::parallel_for(
+              Kokkos::TeamThreadRange(t, is_, ie_ + 1), [=](const int i) {
+                scan_data_(m, k, j, i) =
+                    value_func_(m, k + koff, j + joff, i + ioff);
+              });
+          t.team_barrier();
+
+          // In place scan with the index reversed, from ie down through the
+          // lower ghost cell, 0, so the exclusive suffix stored there is the
+          // total scan along the line
           Kokkos::parallel_scan(
               Kokkos::TeamThreadRange(t, 0, ie_ + 1),
               [=](const int p, Real& update, const bool final) {
                 const int i = ie_ - p;
-                const Real x = value_func_(m, k + koff, j + joff, i + ioff);
+                // Read before writing since the scan is done in place
+                const Real x = scan_data_(m, k, j, i);
                 if (final) {
                   scan_data_(m, k, j, i) = update;
                 }

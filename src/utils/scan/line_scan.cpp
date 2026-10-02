@@ -4,8 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file line_scan.cpp
-//  \brief Implementation file for exclusive prefix sums of cell-centered fields
-//  along cartisian directions.
+//  \brief Implementation file for exclusive prefix scans along any cartisian direction
 
 #include "utils/scan/line_scan.hpp"
 
