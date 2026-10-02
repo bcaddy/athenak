@@ -1,6 +1,6 @@
 """
 Unit tests for the block local line scans in utils/scan/line_scan.hpp.
-The line_scan problem generator runs prefix and suffix scans in every direction and
+The line_scan problem generator runs prefix and suffix sums in every direction and
 exits with an error if any entry differs from a host reference. Each case overrides the
 mesh and meshblock sizes in the input file.
 """

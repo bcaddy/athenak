@@ -94,7 +94,7 @@ int CheckScan(MeshBlockPack *pmbp, const DvceArray4D<Real> &q) {
 //----------------------------------------------------------------------------------------
 //! \fn ProblemGenerator::LineScan()
 //! \brief Problem generator for unit tests of the block local line scans. Runs prefix
-//! and suffix scans in every direction and exits with EXIT_FAILURE on any mismatch.
+//! and suffix sums in every direction and exits with EXIT_FAILURE on any mismatch.
 
 void ProblemGenerator::LineScan(ParameterInput *pin, const bool restart) {
   using line_scan::Direction;

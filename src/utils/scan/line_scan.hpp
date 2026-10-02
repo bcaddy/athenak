@@ -4,7 +4,8 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file line_scan.hpp
-//  \brief Header file for exclusive prefix scans along any cartisian direction
+//  \brief Header file for exclusive prefix and suffix sums along any cartesian
+//  direction
 
 #ifndef UTILS_SCAN_LINE_SCAN_HPP_
 #define UTILS_SCAN_LINE_SCAN_HPP_
@@ -23,7 +24,7 @@ enum class ScanKind { Prefix, Suffix };
 //----------------------------------------------------------------------------------------
 /*!
  * \class LineScan
- * \brief Perform either an exclusive prefix or exclusive suffix scan along a
+ * \brief Compute either an exclusive prefix sum or exclusive suffix sum along a
  * given axis
  *
  * Since Dir and Kind are given explicitly, ValueFunc must be too, e.g. with
@@ -36,14 +37,22 @@ enum class ScanKind { Prefix, Suffix };
  * \endcode
  *
  * \tparam Dir The direction along which the scan is performed.
- * \tparam Kind Whether the scan is an exclusive prefix or suffix scan.
- * \tparam ValueFunc Type of a device callable that returns the value to scan at
+ * \tparam Kind Whether to compute an exclusive prefix or suffix sum.
+ * \tparam ValueFunc Type of a device callable that returns the value to sum at
  * a cell. A KOKKOS_LAMBDA must have the signature
  * \code
  * KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) -> Real
  * \endcode
  * where m is the meshblock and k, j, i are MeshBlock (mb_indcs) indices, which
  * include ghost cells.
+ *
+ * \note Only sums are currently supported. Generalizing to any associative
+ * operation with an identity (e.g. max, min, product) is straightforward: in
+ * both kernels replace the 0 starting value with the operation's identity and
+ * += with the operation, and in BlockLocalScan_I pass the ThreadVectorRange
+ * parallel_scan a Kokkos reducer for the operation so it is also used to
+ * combine the vector lanes. For a non-commutative operation the order of the
+ * suffix combine would also need to be defined.
  */
 template <Direction Dir, ScanKind Kind, typename ValueFunc>
 class LineScan {
@@ -52,19 +61,19 @@ class LineScan {
   static constexpr ScanKind scan_kind = Kind;
 
   /*!
-   * \param value_func The callable that computes the value to scan.
+   * \param value_func The callable that computes the value to sum.
    */
   LineScan(MeshBlockPack* ppack, const ValueFunc& value_func)
       : pmy_pack(ppack),
         value_func(value_func),
         nmb(std::max(pmy_pack->nmb_thispack, pmy_pack->pmesh->nmb_maxperrank)),
-        // Number of real cells plus 2 in the scan direction to store the block
-        // wide scan
+        // Number of real cells plus 2 in the scan direction to store the line
+        // totals
         ni(ppack->pmesh->mb_indcs.nx1 + ((Dir == Direction::I) ? 2 : 0)),
         nj(ppack->pmesh->mb_indcs.nx2 + ((Dir == Direction::J) ? 2 : 0)),
         nk(ppack->pmesh->mb_indcs.nx3 + ((Dir == Direction::K) ? 2 : 0)),
-        // Real cells start at 1 in the scan direction (index 0 and n-1 hold the
-        // block wide scan) and at 0 otherwise
+        // Real cells start at 1 in the scan direction (index 0 or n-1 holds the
+        // line total) and at 0 otherwise
         is((Dir == Direction::I) ? 1 : 0),
         ie(is + ppack->pmesh->mb_indcs.nx1 - 1),
         js((Dir == Direction::J) ? 1 : 0),
@@ -76,7 +85,7 @@ class LineScan {
 
   MeshBlockPack* pmy_pack;
 
-  // The callable that computes the value to scan at each cell
+  // The callable that computes the value to sum at each cell
   const ValueFunc value_func;
 
   // Number of cells in scan_data, including the 2 extra "ghost" in the scan
@@ -91,7 +100,8 @@ class LineScan {
   const DvceArray4D<Real> scan_data;
 
   /*!
-   * \brief Run the block local scan in the chosen direction.
+   * \brief Compute the block local prefix or suffix sum in the chosen
+   * direction.
    */
   void BlockLocalScan() {
     if constexpr (Dir == Direction::I) {
@@ -102,10 +112,10 @@ class LineScan {
   }
 
   /*!
-   * \brief Exclusive prefix or suffix scan along i of value_func over the real
+   * \brief Exclusive prefix or suffix sum along i of value_func over the real
    * cells of each meshblock, stored in scan_data. The line total is stored in
-   * the ghost cell past the end of the scan: ie+1 for a prefix scan, is-1 for a
-   * suffix scan.
+   * the ghost cell past the end of the scan: ie+1 for a prefix sum, is-1 for a
+   * suffix sum.
    *
    * Each (m, k, j) line is handled by one team thread, with the thread's vector
    * lanes splitting the line. This suits short lines (nx1 <= 32), where a whole
@@ -135,7 +145,7 @@ class LineScan {
     const int team_size = std::min(128 / vlen, DevExeSpace().concurrency());
     const int n_league = (nlines + team_size - 1) / team_size;
 
-    // Perform the scan
+    // Compute the sums
     Kokkos::parallel_for(
         "BlockLocalScan_I",
         Kokkos::TeamPolicy<>(DevExeSpace(), n_league, team_size, vlen),
@@ -170,14 +180,14 @@ class LineScan {
   }
 
   /*!
-   * \brief Exclusive prefix or suffix scan along j or k of value_func over the
+   * \brief Exclusive prefix or suffix sum along j or k of value_func over the
    * real cells of each meshblock, stored in scan_data. The line total is stored
    * in the ghost cell past the end of the scan, as in BlockLocalScan_I.
    *
    * Each line is handled by one thread that steps along it serially, so
    * value_func is called once per cell. Neighbouring threads handle
    * neighbouring i, so their loads and stores are coalesced. (This layout is
-   * 3-9x slower than BlockLocalScan_I for scans along i, where neighbouring
+   * 3-9x slower than BlockLocalScan_I for sums along i, where neighbouring
    * threads would be a whole line apart.)
    */
   void BlockLocalScan_JK() {
@@ -202,7 +212,7 @@ class LineScan {
           // s == n writes the line total to the ghost cell past the end
           for (int s = 0; s <= n; ++s) {
             // Offset from the first real cell, walking backwards for a
-            // suffix scan
+            // suffix sum
             const int p = (Kind == ScanKind::Suffix) ? n - 1 - s : s;
             const int kp = (Dir == Direction::K) ? k + p : k;
             const int jp = (Dir == Direction::J) ? j + p : j;
