@@ -25,7 +25,16 @@ enum class ScanKind { Prefix, Suffix };
 /*!
  * \class LineScan
  * \brief Compute either an exclusive prefix sum or exclusive suffix sum along a
- * given axis
+ * given axis.
+ *
+ * \details All kernels, and the initialization of scan_data, run on exec_space,
+ * an execution space instance owned by this object (a separate stream on GPU
+ * backends), so several LineScans can run concurrently. Work is asynchronous
+ * with respect to the default instance: the caller must make sure inputs and
+ * outputs are properly fenced. The intended API is to use the driver function
+ * to advance the state of this class rather than call individual methods.
+ * Unfortunately, nvcc requires that any method that launches/contains a
+ * `KOKKOS_LAMBDA` must be public so all the methods are exposed.
  *
  * Since Dir and Kind are given explicitly, ValueFunc must be too, e.g. with
  * decltype:
@@ -66,6 +75,9 @@ class LineScan {
   LineScan(MeshBlockPack* ppack, const ValueFunc& value_func)
       : pmy_pack(ppack),
         value_func(value_func),
+        // A new instance of the default execution space. On GPU backends this
+        // is a new stream; host backends return the default instance
+        exec_space(Kokkos::Experimental::partition_space(DevExeSpace(), 1)[0]),
         nmb(std::max(pmy_pack->nmb_thispack, pmy_pack->pmesh->nmb_maxperrank)),
         // Number of real cells plus 2 in the scan direction to store the line
         // totals
@@ -81,12 +93,17 @@ class LineScan {
         ks((Dir == Direction::K) ? 1 : 0),
         ke(ks + ppack->pmesh->mb_indcs.nx3 - 1),
         // Allocate storage
-        scan_data("scan_data", nmb, nk, nj, ni) {}
+        scan_data(Kokkos::view_alloc(exec_space, "scan_data"), nmb, nk, nj,
+                  ni) {}
 
   MeshBlockPack* pmy_pack;
 
   // The callable that computes the value to sum at each cell
   const ValueFunc value_func;
+
+  // Execution space instance that all of this object's work runs on. Must be
+  // declared before scan_data since it is used to initialize it
+  const DevExeSpace exec_space;
 
   // Number of cells in scan_data, including the 2 extra "ghost" in the scan
   // direction
@@ -142,13 +159,13 @@ class LineScan {
 
     // About 128 threads per team. Host backends allow at most concurrency()
     // threads per team (1 for Serial)
-    const int team_size = std::min(128 / vlen, DevExeSpace().concurrency());
+    const int team_size = std::min(128 / vlen, exec_space.concurrency());
     const int n_league = (nlines + team_size - 1) / team_size;
 
     // Compute the sums
     Kokkos::parallel_for(
         "BlockLocalScan_I",
-        Kokkos::TeamPolicy<>(DevExeSpace(), n_league, team_size, vlen),
+        Kokkos::TeamPolicy<>(exec_space, n_league, team_size, vlen),
         KOKKOS_LAMBDA(TeamMember_t t) {
           const int line = t.league_rank() * t.team_size() + t.team_rank();
           if (line >= nlines) return;
@@ -204,7 +221,7 @@ class LineScan {
     // One thread per line: the scan direction's range is just its first real
     // cell
     par_for(
-        "BlockLocalScan_JK", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, ks,
+        "BlockLocalScan_JK", exec_space, 0, pmy_pack->nmb_thispack - 1, ks,
         (Dir == Direction::K) ? ks : ke, js, (Dir == Direction::J) ? js : je,
         is, ie,
         KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
