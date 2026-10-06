@@ -233,6 +233,30 @@ struct DvceEdgeFld4D {
 };
 
 //----------------------------------------------------------------------------------------
+// Whether all work launched on exec_space has finished. Non-blocking on CUDA
+// and HIP; other backends have no query so this fences instead.
+inline bool ExecSpaceIdle(const DevExeSpace& exec_space) {
+#if defined(KOKKOS_ENABLE_CUDA)
+  const cudaError_t err = cudaStreamQuery(exec_space.cuda_stream());
+  if (err == cudaErrorNotReady) return false;
+  if (err != cudaSuccess) {
+    Kokkos::abort(cudaGetErrorString(err));
+  }
+  return true;
+#elif defined(KOKKOS_ENABLE_HIP)
+  const hipError_t err = hipStreamQuery(exec_space.hip_stream());
+  if (err == hipErrorNotReady) return false;
+  if (err != hipSuccess) {
+    Kokkos::abort(hipGetErrorString(err));
+  }
+  return true;
+#else
+  exec_space.fence();
+  return true;
+#endif
+}
+
+//----------------------------------------------------------------------------------------
 // wrappers for Kokkos::parallel_for
 // These wrappers implement a variety of parallel execution strategies, including
 // 1D-range, and thread teams for use with inner vector threads. Experiments in K-Athena

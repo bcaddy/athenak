@@ -11,6 +11,8 @@
 #define UTILS_SCAN_LINE_SCAN_HPP_
 
 #include <algorithm>
+#include <cstdlib>
+#include <iostream>
 
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
@@ -20,6 +22,8 @@ namespace line_scan {
 // class template arguments
 enum class Direction { I, J, K };
 enum class ScanKind { Prefix, Suffix };
+// The stage a LineScan is at, i.e. the work currently running
+enum class Stage { NotStarted, BlockLocalScan, Completed };
 
 //----------------------------------------------------------------------------------------
 /*!
@@ -115,6 +119,41 @@ class LineScan {
   // const so it can't be resized or reassigned, but its elements are writable.
   // Must be declared after nmb, ni, nj, nk since it is initialized from them
   const DvceArray4D<Real> scan_data;
+
+  // The stage this scan is at. Advanced only by Driver
+  Stage stage = Stage::NotStarted;
+
+  /*!
+   * \brief Advance the scan without blocking: if the current stage is done,
+   * launch the next one, then return so other LineScans can be driven.
+   *
+   * \return The current stage. Completed once all work has finished, at which
+   * point scan_data can be read without fencing exec_space.
+   */
+  Stage Driver() {
+    // Advance through the different stages, with each stage checking that the
+    // previous is done
+    switch (stage) {
+      case Stage::NotStarted:
+        BlockLocalScan();
+        stage = Stage::BlockLocalScan;
+        break;
+      case Stage::BlockLocalScan:
+        if (ExecSpaceIdle(exec_space)) {
+          stage = Stage::Completed;
+        }
+        break;
+      case Stage::Completed:
+        break;
+      default:
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line "
+                  << __LINE__ << std::endl
+                  << "Unrecognized line_scan::Stage=" << static_cast<int>(stage)
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+    }
+    return stage;
+  }
 
   /*!
    * \brief Compute the block local prefix or suffix sum in the chosen
