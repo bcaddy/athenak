@@ -148,7 +148,7 @@ add_executable(
 
         pgen/unit_tests/eos_compose.cpp
         pgen/unit_tests/gauss_legendre.cpp
-        pgen/unit_tests/line_scan.cpp
+        pgen/unit_tests/line_scan_unittests.cpp
 
         radiation/radiation.cpp
         radiation/radiation_fluxes.cpp
