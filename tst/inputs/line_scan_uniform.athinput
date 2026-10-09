@@ -1,4 +1,4 @@
-# AthenaK input file for unit tests of the block local line scans.
+# AthenaK input file for unit tests of the line scans on uniform meshes.
 # The mesh and meshblock sizes are overridden from the command line by the test suite.
 
 <comment>

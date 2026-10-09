@@ -1,0 +1,62 @@
+# AthenaK input file for unit tests of the line scans across MeshBlocks and ranks with
+# static mesh refinement in 3D. One level 3 region, so lines through it cross levels 0
+# to 3 via the 2:1 buffers. There are 3 root MeshBlocks along x1, so the MeshBlocks
+# are bucketed by root line with a non power of 2 root count.
+
+<comment>
+problem   = line scan unit test across MeshBlocks, 3D SMR
+
+<job>
+basename  = line_scan_test          # problem ID: basename of output filenames
+
+<mesh>
+nghost    = 2          # Number of ghost cells
+nx1       = 24         # Number of zones in X1-direction
+x1min     = 0.0        # minimum value of X1
+x1max     = 1.5        # maximum value of X1
+ix1_bc    = outflow    # inner-X1 boundary flag
+ox1_bc    = outflow    # outer-X1 boundary flag
+
+nx2       = 16         # Number of zones in X2-direction
+x2min     = 0.0        # minimum value of X2
+x2max     = 1.0        # maximum value of X2
+ix2_bc    = outflow    # inner-X2 boundary flag
+ox2_bc    = outflow    # outer-X2 boundary flag
+
+nx3       = 16         # Number of zones in X3-direction
+x3min     = 0.0        # minimum value of X3
+x3max     = 1.0        # maximum value of X3
+ix3_bc    = periodic   # inner-X3 boundary flag
+ox3_bc    = periodic   # outer-X3 boundary flag
+
+<meshblock>
+nx1       = 8          # Number of cells in each MeshBlock, X1-dir
+nx2       = 8          # Number of cells in each MeshBlock, X2-dir
+nx3       = 4          # Number of cells in each MeshBlock, X3-dir
+
+<mesh_refinement>
+refinement = static    # type of refinement
+
+<refined_region1>
+level     = 3
+x1min     = 0.30
+x1max     = 0.34
+x2min     = 0.55
+x2max     = 0.6
+x3min     = 0.45
+x3max     = 0.5
+
+<time>
+evolution  = static    # dynamic/kinematic/static
+cfl_number = 0.3       # The Courant, Friedrichs, & Lewy (CFL) Number
+nlim       = 0         # cycle limit
+tlim       = 0         # time limit
+
+<hydro>                # stores the scanned fields in u0
+eos         = ideal    # EOS type
+reconstruct = plm      # spatial reconstruction method
+rsolver     = advect   # Riemann-solver to be used (static evolution requires advect)
+gamma       = 1.4      # gamma = C_p/C_v
+
+<problem>
+pgen_name = line_scan
