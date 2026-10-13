@@ -27,31 +27,19 @@
 #endif  // MPI_PARALLEL_ENABLED
 
 namespace line_scan {
-// Outside of LineScan so they can be named without the template arguments
+/// The direction of the scan
 enum class Direction { I, J, K };
+
+/// The type of scan to perform, prefix or suffix
 enum class ScanKind { Prefix, Suffix };
-// The work a LineScan currently has in flight
+
+/// The stage a LineScan currently has in flight
 enum class Stage {
   NotStarted,
   BlockLocalScan,
   Exchange,
   AddUpstream,
   Completed
-};
-
-// An upstream MeshBlock whose line totals add to a MeshBlock's upstream sum
-struct Source {
-  int face;    // index in faces (local source) or recvbuf (remote source)
-  int dlevel;  // source level minus target level
-  // Offset of the finer face's origin from the coarser one's, in finer cells
-  int off1, off2;
-};
-
-// The faces in sendbuf or recvbuf exchanged with one rank
-struct Peer {
-  int rank;
-  int first_face;
-  int nfaces;
 };
 
 //----------------------------------------------------------------------------------------
@@ -297,6 +285,17 @@ class LineScan {
   //--------------------------------------------------------------------------------------
   // Kernels. Public only because nvcc requires that of methods containing a
   // KOKKOS_LAMBDA; the Impl prefix marks them as not for use outside LineScan
+  // and they should be treated as private.
+
+  // An upstream MeshBlock whose line totals add to a MeshBlock's upstream sum.
+  // Public only because nvcc forbids capturing private or protected types in a
+  // KOKKOS_LAMBDA
+  struct Source {
+    int face;    // index in faces (local source) or recvbuf (remote source)
+    int dlevel;  // source level minus target level
+    // Offset of the finer face's origin from the coarser one's, in finer cells
+    int off1, off2;
+  };
 
   /*!
    * \brief Exclusive scan along i of value_func over each MeshBlock's real
@@ -455,6 +454,13 @@ class LineScan {
   }
 
  private:
+  // The faces in sendbuf or recvbuf exchanged with one rank
+  struct Peer {
+    int rank;
+    int first_face;
+    int nfaces;
+  };
+
   // The two transverse directions, across the scan, in increasing order
   static constexpr Direction t1_dir =
       (Dir == Direction::I) ? Direction::J : Direction::I;
