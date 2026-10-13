@@ -58,19 +58,34 @@ class LineScanBase {
    * \return The current stage.
    */
   virtual Stage Driver() = 0;
+
+  /*!
+   * \brief Make a Completed scan ready to run again.
+   */
+  virtual void Reset() = 0;
 };
 
 //----------------------------------------------------------------------------------------
 /*!
  * \brief Drive several LineScans round-robin until all are completed.
  *
- * \details Reset every LineScan object then loop over them to progress each
- * scan so the scans advance independently and overlap. Every rank must pass the
- * scans in the same order.
+ * \details Reset every LineScan object, fence all prior device work so the
+ * scans' inputs are ready, then loop over them to progress each scan so the
+ * scans advance independently and overlap. Every rank must pass the scans in
+ * the same order.
 
  * \param scans Pointers to LineScans of any mix of types.
  */
 inline void MultiScanDriver(const std::vector<LineScanBase*>& scans) {
+  // The scans run on their own execution space instances, so their inputs
+  // must be ready before they start
+  Kokkos::fence();
+
+  // Reset all the scans
+  for (LineScanBase* scan : scans) {
+    scan->Reset();
+  }
+
   // flag to check if scans are complete
   bool all_completed = false;
 
@@ -107,12 +122,10 @@ inline void MultiScanDriver(const std::vector<LineScanBase*>& scans) {
  * non-negative).
  *
  * Each LineScan runs its kernels on its own execution space instance and has
- * its own MPI communicator, so several can run concurrently. Starting a scan
- * fences all prior device work, so its inputs are ready and earlier reads of
- * scan_data are done; scan_data is ready once Driver returns Completed. The
- * kernel methods are public only because nvcc requires that of
- * methods containing a `KOKKOS_LAMBDA`; their Impl prefix marks them as
- * internal.
+ * its own MPI communicator, so several can run concurrently. `scan_data` is
+ * ready once Driver returns Completed. The kernel methods are public only
+ * because nvcc requires that of methods containing a `KOKKOS_LAMBDA`; their
+ * Impl prefix marks them as internal.
  *
  * Requirements on the caller:
  *  - All GPU operations that `value_func` depends on must be complete before
@@ -319,7 +332,7 @@ class LineScan : public LineScanBase {
    * \brief Make a Completed scan ready to run again. Fails if a scan is in
    * flight.
    */
-  void Reset() {
+  void Reset() override {
     if (stage != Stage::Completed && stage != Stage::NotStarted) {
       FatalError("LineScan::Reset called while a scan is in flight");
     }
