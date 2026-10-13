@@ -44,6 +44,54 @@ enum class Stage {
 
 //----------------------------------------------------------------------------------------
 /*!
+ * \class LineScanBase
+ * \brief Abstract Base Class (ABC) for LineScan so you can create containers
+ * that contain many different LineScan objects with different template
+ * parameters and drive them all together with MultiScanDriver.
+ */
+class LineScanBase {
+ public:
+  virtual ~LineScanBase() = default;
+
+  /*!
+   * \brief Advance the scan.
+   * \return The current stage.
+   */
+  virtual Stage Driver() = 0;
+};
+
+//----------------------------------------------------------------------------------------
+/*!
+ * \brief Drive several LineScans round-robin until all are completed.
+ *
+ * \details Reset every LineScan object then loop over them to progress each
+ * scan so the scans advance independently and overlap. Every rank must pass the
+ * scans in the same order.
+
+ * \param scans Pointers to LineScans of any mix of types.
+ */
+inline void MultiScanDriver(const std::vector<LineScanBase*>& scans) {
+  // flag to check if scans are complete
+  bool all_completed = false;
+
+  // Loop over all scans until they're complete
+  while (!all_completed) {
+    all_completed = true;
+
+    // Loop over the scans and call the driver function on each
+    for (LineScanBase* scan : scans) {
+      auto stage = scan->Driver();
+
+      // If any scan isn't complete then run the outer loop again
+      if (stage != Stage::Completed) {
+        all_completed = false;
+      }
+    }
+  }
+}
+
+//----------------------------------------------------------------------------------------
+/*!
  * \class LineScan
  * \brief Compute either an exclusive prefix sum or exclusive suffix sum along a
  * given axis across the entire domain
@@ -109,7 +157,7 @@ enum class Stage {
  * restriction and prolongation in the exchange.
  */
 template <Direction Dir, ScanKind Kind, typename ValueFunc>
-class LineScan {
+class LineScan : public LineScanBase {
  public:
   /*!
    * \brief Allocate the scan's arrays and duplicate MPI_COMM_WORLD, which is
@@ -164,7 +212,7 @@ class LineScan {
   /*!
    * \brief Free the MPI communicator. Fails if a scan is in flight.
    */
-  ~LineScan() {
+  ~LineScan() override {
     if (stage != Stage::NotStarted && stage != Stage::Completed) {
       FatalError("LineScan destroyed while a scan is in flight");
     }
@@ -179,7 +227,7 @@ class LineScan {
    * \return The current stage. Once Completed, scan_data can be read without
    * a fence.
    */
-  Stage Driver() {
+  Stage Driver() override {
     switch (stage) {
       // Build the exchange plan and run the block local scans
       case Stage::NotStarted:
