@@ -41,6 +41,8 @@ cases = {
     "uniform_3d_nx1_4": uniform((16, 8, 8), (4, 4, 4), outflow=(2,)),
     "uniform_3d_nx1_24": uniform((48, 16, 16), (24, 8, 8)),
     "uniform_3d_non_pow2": uniform((24, 36, 40), (8, 12, 20), outflow=(1, 2, 3)),
+    # Odd nx1, so the final kernel adds one cell per thread instead of two
+    "uniform_3d_odd": uniform((15, 12, 14), (5, 6, 7)),
     "smr_1d": refined("smr1d"),
     "smr_2d": refined("smr2d"),
     "smr_2d_swapped_bcs": refined(

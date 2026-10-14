@@ -14,9 +14,10 @@
 //     refinement
 //   - nonlinear fields, checked against a brute force implementation of the
 //     restriction and prolongation rules
-//  The scans of the linear and nonlinear fields run concurrently and are reused
-//  on new fields, after a forced rebuild of the exchange plan, and with AMR
-//  again in the final function after the mesh has changed.
+//  The scans of the linear and nonlinear fields run concurrently, driven by
+//  MultiScanDriver, which is checked to keep them all in flight at once. They
+//  are reused on new fields, after a forced rebuild of the exchange plan, and
+//  with AMR again in the final function after the mesh has changed.
 
 #include <algorithm>
 #include <array>
@@ -631,26 +632,74 @@ int CheckGlobalScan(const Scan<Dir, Kind>& scan, const Mesh* pm,
   return Report(name, nerr);
 }
 
-// Sets u0 to the field, drives all the scans concurrently and checks them
-// against ref. Returns the mismatches on all ranks
+// The stage of every scan driven by MultiScanDriver, and the most that were in
+// flight at once
+struct InFlight {
+  std::vector<Stage> stages;
+  int max_in_flight = 0;
+};
+
+// Passes Driver calls through to a scan and records its stage in InFlight
+class InFlightProbe : public line_scan::LineScanBase {
+ public:
+  InFlightProbe(line_scan::LineScanBase* scan, InFlight* in_flight, int index)
+      : scan_(scan), in_flight_(in_flight), index_(index) {}
+
+  Stage Driver() override {
+    std::vector<Stage>& stages = in_flight_->stages;
+    stages[index_] = scan_->Driver();
+    const int n = static_cast<int>(
+        std::count_if(stages.begin(), stages.end(), [](const Stage s) {
+          return s != Stage::NotStarted && s != Stage::Completed;
+        }));
+    in_flight_->max_in_flight = std::max(in_flight_->max_in_flight, n);
+    return stages[index_];
+  }
+
+  void Reset() override { scan_->Reset(); }
+
+ private:
+  line_scan::LineScanBase* scan_;
+  InFlight* in_flight_;
+  int index_;
+};
+
+// Sets u0 to the field, drives all the scans concurrently with MultiScanDriver
+// and checks them against ref. Returns the mismatches on all ranks
 int Check(ScanSet& scans, Mesh* pm, const std::string& check, Reference& ref,
           const Field& field) {
   FillField(pm->pmb_pack, field);
+  std::vector<line_scan::LineScanBase*> scan_ptrs;
+  // MultiScanDriver resets the scans and fences, so scan_data holds the
+  // sentinel when they start
   scans.ForEach([&](auto& scan) {
-    scan.Reset();
     Kokkos::deep_copy(scan.scan_data, kSentinel);
+    scan_ptrs.push_back(&scan);
   });
-  Kokkos::fence();
 
-  // Poll round-robin until all complete, as LineScan requires
-  bool done = false;
-  while (!done) {
-    done = true;
-    scans.ForEach(
-        [&](auto& scan) { done &= (scan.Driver() == Stage::Completed); });
+  // Every scan takes several Driver calls, so polling round-robin puts all of
+  // them in flight at once
+  InFlight in_flight;
+  in_flight.stages.assign(scan_ptrs.size(), Stage::NotStarted);
+  std::vector<InFlightProbe> probes;
+  for (int n = 0; n < static_cast<int>(scan_ptrs.size()); ++n) {
+    probes.emplace_back(scan_ptrs[n], &in_flight, n);
   }
+  std::vector<line_scan::LineScanBase*> probe_ptrs;
+  for (InFlightProbe& probe : probes) {
+    probe_ptrs.push_back(&probe);
+  }
+  line_scan::MultiScanDriver(probe_ptrs);
 
   int nerr = 0;
+  const int nscans = static_cast<int>(scan_ptrs.size());
+  if (in_flight.max_in_flight != nscans) {
+    std::cout << "  rank " << global_variable::my_rank << ": only "
+              << in_flight.max_in_flight << " of " << nscans
+              << " scans were in flight at once" << std::endl;
+  }
+  nerr += Report(check + " MultiScanDriver overlap",
+                 (in_flight.max_in_flight == nscans) ? 0 : 1);
   scans.ForEach(
       [&](auto& scan) { nerr += CheckGlobalScan(scan, pm, check, ref); });
   return nerr;
