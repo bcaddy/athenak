@@ -500,17 +500,75 @@ class LineScan : public LineScanBase {
    * \brief Add each MeshBlock's upstream sum to its block local scan.
    */
   void ImplAddUpstream() {
-    auto scan_data_ = scan_data;
-    auto upstream_sum_ = upstream_sum;
+    if (pmy_pack->pmesh->mb_indcs.nx1 % 2 == 0) {
+      ImplAddUpstreamKernel<2>();
+    } else {
+      ImplAddUpstreamKernel<1>();
+    }
+  }
+
+  /*!
+   * \brief ImplAddUpstream with N neighbouring cells per thread as one access.
+   * Assumes each rank holds fewer than 2^31 cells (cbroot(2^31) ~= 1290^3). N =
+   * 1 is used for meshblocks with an odd number of cells and N = 2 is used for
+   * meshblocks with an even number. N = 2 is about 1.4x faster than N = 1
+   */
+  template <int N>
+  void ImplAddUpstreamKernel() {
+    // N adjacent cells, loaded and stored as one aligned access
+    struct alignas(N * sizeof(Real)) RealPack {
+      Real data[N];
+    };
+
+    // Collect class data
     auto& indcs = pmy_pack->pmesh->mb_indcs;
+    const std::uint32_t n1 = indcs.nx1;
+    const std::uint32_t n21 = n1 * indcs.nx2;
+    const std::uint32_t n321 = n21 * indcs.nx3;
+    Real* const scan_data_ptr = scan_data.data();
+    const Real* const upstream_sum_ptr = upstream_sum.data();
+
+    // Perform the add
     par_for(
-        "LineScan::AddUpstream", exec_space, 0, pmy_pack->nmb_thispack - 1, 0,
-        indcs.nx3 - 1, 0, indcs.nx2 - 1, 0, indcs.nx1 - 1,
-        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-          // The face cell is (k, j) along i, (k, i) along j and (j, i) along k
-          const int t1 = (Dir == Direction::I) ? j : i;
-          const int t2 = (Dir == Direction::K) ? j : k;
-          scan_data_(m, k, j, i) += upstream_sum_(m, t2, t1);
+        "LineScan::AddUpstream", exec_space, 0,
+        static_cast<int>(n321 * pmy_pack->nmb_thispack / N) - 1,
+        KOKKOS_LAMBDA(const int p) {
+          // The offset into the scan_data array
+          const std::uint32_t scan_data_offset =
+              static_cast<std::uint32_t>(p) * N;
+
+          // The scan data to update
+          RealPack scan_loaded = *reinterpret_cast<const RealPack*>(
+              scan_data_ptr + scan_data_offset);
+
+          // Now perform the add based on the direction
+          if (Dir == Direction::I) {
+            const Real upstream_loaded =
+                upstream_sum_ptr[scan_data_offset / n1];
+            for (int i = 0; i < N; ++i) {
+              scan_loaded.data[i] += upstream_loaded;
+            }
+          } else if (Dir == Direction::J) {
+            const std::uint32_t upstream_offset =
+                scan_data_offset / n21 * n1 + scan_data_offset % n1;
+            const RealPack upstream_loaded = *reinterpret_cast<const RealPack*>(
+                upstream_sum_ptr + upstream_offset);
+            for (int i = 0; i < N; ++i) {
+              scan_loaded.data[i] += upstream_loaded.data[i];
+            }
+          } else {
+            const std::uint32_t upstream_offset =
+                scan_data_offset / n321 * n21 + scan_data_offset % n21;
+            const RealPack upstream_loaded = *reinterpret_cast<const RealPack*>(
+                upstream_sum_ptr + upstream_offset);
+            for (int i = 0; i < N; ++i) {
+              scan_loaded.data[i] += upstream_loaded.data[i];
+            }
+          }
+
+          // Write out the updates to scan_data
+          *reinterpret_cast<RealPack*>(scan_data_ptr + scan_data_offset) =
+              scan_loaded;
         });
   }
 
