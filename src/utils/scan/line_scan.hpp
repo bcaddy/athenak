@@ -242,8 +242,17 @@ class LineScan : public LineScanBase {
    */
   Stage Driver() override {
     switch (stage) {
-      // Build the exchange plan and run the block local scans
+      // Run the block local scans and build the exchange plan
       case Stage::NotStarted:
+        // Choose the correct block local scan for the direction. Launched
+        // first since it doesn't use the exchange plan, so the device runs it
+        // while the host builds the plan
+        if constexpr (Dir == Direction::I) {
+          ImplBlockLocalScan_I();
+        } else {
+          ImplBlockLocalScan_JK();
+        }
+
         // Rebuild the plan on the first run and after the mesh changes
         if (plan_mesh_seq != pmy_pack->pmesh->GetAMRLoadBalanceUpdateSeq()) {
           BuildExchangePlan();
@@ -251,13 +260,6 @@ class LineScan : public LineScanBase {
 
         // If MPI is enabled then post the receives now
         PostReceives();
-
-        // Choose the correct block local scan for the direction
-        if constexpr (Dir == Direction::I) {
-          ImplBlockLocalScan_I();
-        } else {
-          ImplBlockLocalScan_JK();
-        }
 
         // If there are meshblock faces to send over MPI then queue the kernel
         // that packs the MPI buffers.
