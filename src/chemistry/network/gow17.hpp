@@ -846,7 +846,7 @@ class GOW17Network {
   // --- H2+ charge exchange with H ---
   // (26) H2+ + *H -> H+ + H2
   //  --- O+ reactions ---
-  // (27) H+ + *O -> O+ + *H -- exp(-232/T)
+  // (27) H+ + *O -> O+ + *H -- exp(-227/T)
   // (28) O+ + *H -> H+ + *O
   // (29) O+ + H2 -> OH + *H     -- branching of H2O+
   // (30) O+ + H2 -> *O + *H + *H  -- branching of H2O+
@@ -1308,6 +1308,9 @@ class GOW17Network {
     // and right slopes and dx is the same for both the velocity in the central
     // cell cancels out and we can just difference the neighboring cells
 
+    // The dimensionality of the problem, used to compute the proper average
+    Real n_dim = 1;
+
     // vx
     const Real vp1 = w0(mb_idx, IVX, k, j, i + 1);
     const Real vm1 = w0(mb_idx, IVX, k, j, i - 1);
@@ -1321,6 +1324,7 @@ class GOW17Network {
       const Real vm1 = w0(mb_idx, IVY, k, j - 1, i);
       const Real dx = sizes.d_view(mb_idx).dx2;
       dvdy = 0.5 * ((vp1 - vm1) / dx);
+      n_dim += 1.0;
     }
 
     // vz
@@ -1330,9 +1334,10 @@ class GOW17Network {
       const Real vm1 = w0(mb_idx, IVZ, k - 1, j, i);
       const Real dx = sizes.d_view(mb_idx).dx3;
       dvdz = 0.5 * ((vp1 - vm1) / dx);
+      n_dim += 1.0;
     }
     const Real dvdr_avg =
-        (Kokkos::abs(dvdx) + Kokkos::abs(dvdy) + Kokkos::abs(dvdz)) / 3.;
+        (Kokkos::abs(dvdx) + Kokkos::abs(dvdy) + Kokkos::abs(dvdz)) / n_dim;
     // return gradv_, in cgs.
     return dvdr_avg * velocity_cgs / length_cgs;
   }
