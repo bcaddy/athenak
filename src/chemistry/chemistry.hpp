@@ -17,7 +17,7 @@
 #include "athena.hpp"
 #include "bvals/bvals.hpp"
 #include "chemistry/network/chemistry_networks.hpp"
-#include "chemistry/radiation.hpp"
+#include "chemistry/radiation/radiation.hpp"
 #include "parameter_input.hpp"
 #include "tasklist/task_list.hpp"
 

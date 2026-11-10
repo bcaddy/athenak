@@ -1,5 +1,5 @@
-#ifndef CHEMISTRY_RADIATION_HPP_
-#define CHEMISTRY_RADIATION_HPP_
+#ifndef CHEMISTRY_RADIATION_RADIATION_HPP_
+#define CHEMISTRY_RADIATION_RADIATION_HPP_
 //========================================================================================
 // AthenaXXX astrophysical plasma code
 // Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
@@ -40,4 +40,4 @@ class Radiation {
 };
 
 }  // namespace chemistry
-#endif  // CHEMISTRY_RADIATION_HPP_
+#endif  // CHEMISTRY_RADIATION_RADIATION_HPP_
