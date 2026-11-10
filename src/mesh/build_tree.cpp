@@ -300,6 +300,7 @@ void Mesh::BuildTreeFromScratch(ParameterInput *pin) {
   time = pin->GetOrAddReal("time", "start_time", 0.0);
   dt   = std::numeric_limits<float>::max();
   cfl_no = pin->GetReal("time", "cfl_number");
+  dt_max = pin->GetOrAddReal("time", "dt_max", std::numeric_limits<Real>::max());
   ncycle = 0;
   if (global_variable::my_rank == 0) {PrintMeshDiagnostics();}
 
@@ -494,5 +495,6 @@ void Mesh::BuildTreeFromRestart(ParameterInput *pin, IOWrapper &resfile,
 
   // set remaining parameters, output diagnostics
   cfl_no = pin->GetReal("time", "cfl_number");
+  dt_max = pin->GetOrAddReal("time", "dt_max", std::numeric_limits<Real>::max());
   if (global_variable::my_rank == 0) {PrintMeshDiagnostics();}
 }
