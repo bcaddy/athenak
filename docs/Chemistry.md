@@ -66,6 +66,8 @@ The GOW17 network is from the work of [Gong, Ostriker and Wolfire (2017)](https:
 
 Of the 18 species, 12 are evolved directly by the ODE solver (He+, OHx, CHx, CO, C+, HCO+, H2, H+, H3+, H2+, O+, and Si+) while the remaining "ghost" species (Si, C, O, He, e-, and H) are recomputed algebraically from the conservation laws on every function evaluation. The internal energy is evolved alongside the species for a total of 13 equations. Because the reaction rates span many orders of magnitude the network is stiff, so an implicit ODE solver such as [Kokkos BDF](ODE-Solvers#kokkos-bdf) is recommended and the Forward Euler solver is known not to converge in a reasonable amount of time.
 
+The GOW17 network uses 8 radiation bands: 6 photodissociation and photoionization bands, 1 band for photoelectric heating and grain-assisted recombination, and a final band that holds the cosmic-ray ionization rate. See [Radiation](#radiation) for how these are set.
+
 Runtime parameters for the GOW17 network, these go inside the `<chemistry>` block:
 
 | Option                           | Type | Allowed Values         | Default                 | Description                                                                                                                    |
@@ -86,6 +88,33 @@ Runtime parameters for the GOW17 network, these go inside the `<chemistry>` bloc
 | GOW17_Leff_CO_max                | Real | any real > 0           | 3.0e20                  | Maximum effective length (cm) for CO cooling                                                                                   |
 | GOW17_H2_rovib_cooling           | bool | true, false            | true                    | Whether to include H2 rovibrational cooling                                                                                    |
 | is_kgrH2_const                   | bool | true, false            | false                   | Whether to use a constant H2 formation rate on grains                                                                          |
+
+## Radiation
+
+Chemistry can depend on the radiation field, for example through photodissociation, photoionization, and photoelectric heating. The radiation method is selected at runtime with the `chem_radiation` parameter in the `<chemistry>` block. Other radiation modules in AthenaK, such as the `<radiation>` transport module, are not coupled to chemistry at this time.
+
+| Option         | Type   | Allowed Values    | Default  | Description                             |
+| -------------- | ------ | ----------------- | -------- | --------------------------------------- |
+| chem_radiation | string | constant, six_ray | constant | The radiation method used for chemistry |
+
+The radiation field is stored as one value per frequency band. The number and meaning of the bands depend on the chemistry network; see the network sections above.
+
+### Constant Radiation
+
+The radiation field is uniform in space and constant in time. This is the simplest option. It is useful for testing and as a template for writing your own radiation method.
+
+Runtime parameters for constant radiation, these go inside the `<chemistry>` block:
+
+| Option       | Type | Allowed Values    | Default | Description                                                                                                    |
+| ------------ | ---- | ----------------- | ------- | -------------------------------------------------------------------------------------------------------------- |
+| radiation_G0 | Real | any real $\geq$ 0 | 1e-6    | Strength of the interstellar radiation field relative to the Draine (1978) field, applied to every photon band |
+| radiation_CR | Real | any real $\geq$ 0 | 2e-16   | Cosmic-ray ionization rate per hydrogen nucleon in s$^{-1}$                                                    |
+
+### Six-ray
+
+**Not yet implemented.**
+
+The six-ray method computes the radiation field by ray tracing along the six Cartesian directions ($\pm x$, $\pm y$, $\pm z$) and averaging the attenuated field over those directions. The incident radiation is assumed to come from the edge of the computational domain along each ray, and it can be set separately for each direction, so the method can model both ISM and photodissociation region (PDR) setups. Because the incident field is assumed to come from the physical boundary, it is compatible with periodic, outflow, reflecting, and user-defined boundary conditions.
 
 ## Timestep details
 
