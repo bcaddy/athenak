@@ -630,6 +630,8 @@ void Mesh::NewTimeStep(const Real tlim) {
   if (pmb_pack->ppart != nullptr) {
     dt = std::min(dt, (pmb_pack->ppart->dtnew) );
   }
+  // User imposed maximum timestep
+  dt = std::min(dt, dt_max);
 
 #if MPI_PARALLEL_ENABLED
   // get minimum dt over all MPI ranks

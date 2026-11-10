@@ -50,7 +50,9 @@ Runtime Parameters:
 | kokkos_BDF_atol            | Real | 1.0e-6  | The allowed absolute tolerance passed to the ODE solver                                                                                                                                  |
 | kokkos_BDF_first_step_frac | Real | 0.0     | fraction of the hydro timestep to use for the solver's first internal step, i.e. `dt0 = kokkos_BDF_first_step_frac * dt`. The default value of 0.0 let's the solver decide the time step |
 
-*Note: The Kokkos BDF solver also has a maximum internal step size that is set to the hydro timestep `dt`. As of Kokkos Kernels 4.4 this is not implemented within Kokkos Kernels and so it currently has no effect.*
+*Note: The Kokkos BDF solver also has a maximum internal step size that is set to the hydro timestep `dt`.*
+
+*Note: `kokkos_BDF_atol` is a single tolerance shared by every equation, including the internal energy. If it is set below the round-off error of the linear solves in the Newton iteration, that round-off can look like an error larger than the tolerance. The Newton iteration then fails to converge and the solver cuts its step size over and over.Each hydro step then takes tens of thousands of internal steps, slowing the run by orders of magnitude. Values of 1e-12 or larger will likely avoid this issue while still preserving sufficient accuracy*
 
 ## Developer Documentation
 
