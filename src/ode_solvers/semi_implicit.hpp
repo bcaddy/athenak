@@ -18,7 +18,11 @@
 namespace ode_solvers {
 
 struct SemiImplicitSettings {
-  /// Number of substeps per call, all of equal length
+  /// Fraction of the energy and limiting-species timescales a substep may take
+  Real semi_implicit_dt_sub_frac;
+  /// Floor on the abundance used to scale the species timescales
+  Real semi_implicit_yfloor;
+  /// Maximum number of substeps; the last one takes all the time that is left
   int semi_implicit_nsub_max;
   /// Recompute the rate coefficients at the temperature after the energy update;
   /// if false, the species use the rates from the start of the substep
@@ -43,8 +47,10 @@ constexpr bool IsValidOrder(std::integer_sequence<int, K...>, const int n) {
 /*!
  * \brief Solve a chemical network with a semi-implicit Gauss-Seidel method.
  *
- * \details The interval is split into `semi_implicit_nsub_max` equal
- * substeps of length h. In each substep the internal energy takes one
+ * \details The interval is split into at most `semi_implicit_nsub_max`
+ * substeps of length h, each limited to `semi_implicit_dt_sub_frac` times the
+ * energy timescale e/|Edot| and the timescales y/|f| of the species the network
+ * lists in `StepLimitingSpecies`. In each substep the internal energy takes one
  * linearized backward Euler step,
  *   e^{n+1} = e^n + h Edot / (1 - h dEdot/de),
  * and then, with the rate coefficients recomputed at the new temperature if
@@ -64,6 +70,9 @@ constexpr bool IsValidOrder(std::integer_sequence<int, K...>, const int n) {
  *   - `UpdateOrder`, a `std::integer_sequence<int, ...>` of species indices in
  *     the order they are updated. It is a compile-time list, so the update is
  *     unrolled with constant indices and `y` stays in registers.
+ *   - `StepLimitingSpecies`, the species whose relative change limits the
+ *     substep, in the same form. Species that relax to equilibrium within a
+ *     substep should not be listed; backward Euler carries them there anyway.
  *   - `SetupNextStep(y)`, which prepares the rate coefficients for a substep
  *     and returns the ghost species (abundances not stored in `y` but set by
  *     element conservation), or an empty struct if there are none.
@@ -81,6 +90,8 @@ class SemiImplicit {
   SemiImplicit(SemiImplicitSettings const settings, ode_t& ode_system,
                Real const t_start, Real const dt)
       : ode_system(ode_system),
+        dt_sub_frac(settings.semi_implicit_dt_sub_frac),
+        yfloor(settings.semi_implicit_yfloor),
         nsub_max(settings.semi_implicit_nsub_max),
         refresh_rates(settings.semi_implicit_refresh_rates),
         t_start(t_start),
@@ -91,11 +102,20 @@ class SemiImplicit {
   static_assert(semi_implicit_detail::IsValidOrder(typename ode_t::UpdateOrder{},
                                                    ode_t::IIE),
                 "UpdateOrder must list distinct species indices below IIE");
+  static_assert(semi_implicit_detail::IsValidOrder(
+                    typename ode_t::StepLimitingSpecies{}, ode_t::IIE),
+                "StepLimitingSpecies must list distinct species indices below IIE");
 
   // ----- Variables -----
+  /// A small number to keep the timescales finite
+  static constexpr Real small = 1e-35;
   /// The system of ODEs to solve
   ode_t& ode_system;
-  /// The number of equal substeps
+  /// Fraction of the timescales a substep may take
+  const Real dt_sub_frac;
+  /// Floor on the abundance used to scale the species timescales
+  const Real yfloor;
+  /// Maximum number of substeps
   const int nsub_max;
   /// Recompute the rate coefficients at the temperature after the energy update;
   /// if false, the species use the rates from the start of the substep
@@ -116,7 +136,9 @@ class SemiImplicit {
   static SemiImplicitSettings GetSettings(ParameterInput* pin,
                                           std::string module) {
     return SemiImplicitSettings{
-        pin->GetOrAddInteger(module, "semi_implicit_nsub_max", 10),
+        pin->GetOrAddReal(module, "semi_implicit_dt_sub_frac", 0.1),
+        pin->GetOrAddReal(module, "semi_implicit_yfloor", 1.0e-12),
+        pin->GetOrAddInteger(module, "semi_implicit_nsub_max", 100000),
         pin->GetOrAddBoolean(module, "semi_implicit_refresh_rates", true)};
   }
 
@@ -136,10 +158,10 @@ class SemiImplicit {
       const Real edot = ode_system.Edot(y, ghosts);
       const Real dedot_de = EnergyDerivative_(ghosts, edot);
 
-      // Dividing the time left by the substeps left lands the last substep
-      // exactly on t_end, where accumulating a fixed h would leave t_now short
+      // The last allowed substep takes all the time that is left
       const Real t_left = t_end - t_now;
-      const Real h = t_left / Kokkos::max(nsub_max - n, 1);
+      const Real h =
+          (n >= nsub_max - 1) ? t_left : ChooseStep_(ghosts, edot, t_left);
 
       UpdateEnergy_(edot, dedot_de, h);
       if (refresh_rates) ghosts = ode_system.SetupNextStep(y);
@@ -167,6 +189,38 @@ class SemiImplicit {
     const Real edot_p = ode_system.Edot(y, ghosts);
     y(ode_t::IIE) = e;
     return Kokkos::fmin((edot_p - edot) / de, 0.0);
+  }
+
+  /*!
+   * \brief The substep: `dt_sub_frac` times the shortest of the energy timescale
+   * e/|Edot| and the relative timescales y/|f| of the step-limiting species.
+   * The species timescale is relative because the trace species sit at 1e-10
+   * to 1e-4 of H and change by orders of magnitude while their absolute change
+   * is tiny.
+   */
+  template <class ghost_type>
+  KOKKOS_FUNCTION Real ChooseStep_(const ghost_type& ghosts, const Real edot,
+                                   const Real t_left) const {
+    const auto& y = ode_system.y;
+    Real h = t_left;
+    const Real e = y(ode_t::IIE);
+    if (e > 0.0) {
+      h = Kokkos::fmin(h, dt_sub_frac * e / (Kokkos::fabs(edot) + small));
+    }
+    const auto rates = ode_system.CDRates(y, ghosts);
+    LimitBySpecies_(typename ode_t::StepLimitingSpecies{}, rates, h);
+    return h;
+  }
+
+  template <int... K, class rates_type>
+  KOKKOS_FUNCTION void LimitBySpecies_(std::integer_sequence<int, K...>,
+                                       const rates_type& rates, Real& h) const {
+    const auto& y = ode_system.y;
+    ((h = Kokkos::fmin(
+          h, dt_sub_frac * Kokkos::fmax(y(K), yfloor) /
+                 (Kokkos::fabs(rates.creation(K) - y(K) * rates.destruction(K)) +
+                  small))),
+     ...);
   }
 
   KOKKOS_FUNCTION void UpdateEnergy_(const Real edot, const Real dedot_de,
