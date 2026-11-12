@@ -34,7 +34,7 @@ Chemistry::Chemistry(MeshBlockPack* ppack, ParameterInput* pin)
       mu_H(pin->GetOrAddReal("chemistry", "mu_H", 1.4)),
       chemistry_scalars_first_idx(ComputeChemistryScalarsStartIndex()),
       my_pin(pin),
-      pchem_rad(ppack, pin) {
+      pchem_rad(MakeRadiation(ppack, pin)) {
   // Verify that units are enables
   if (!pin->DoesBlockExist("units")) {
     std::cerr
@@ -94,7 +94,7 @@ void Chemistry::UpdateChemistry() {
   Real const mu_H_local = mu_H;
 
   // ----- Get radiation stuff -----
-  const auto ir = pchem_rad.ir;
+  const auto ir = std::get<Radiation<Network_t>>(pchem_rad).ir;
 
   // ----- Load network and ODE solver settings -----
   // Read the files and cache the results. Static variables have static storage
