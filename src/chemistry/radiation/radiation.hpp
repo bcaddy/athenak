@@ -11,8 +11,6 @@
 #include <cstdlib>
 #include <iostream>
 #include <string>
-#include <type_traits>
-#include <variant>
 
 #include "athena.hpp"
 #include "bvals/bvals.hpp"
@@ -23,12 +21,8 @@
 namespace chemistry {
 /*!
  * \class Radiation
- * \brief The radiation field the chemistry network sees
- *
- * \tparam Network_t The chemistry network. Only GOW17 uses radiation; for the
- * other networks ir is left empty.
+ * \brief Computes the radiation field that the chemistry networks use
  */
-template <typename Network_t>
 class Radiation {
  public:
   Radiation(MeshBlockPack* ppack, ParameterInput* pin) {
@@ -36,16 +30,31 @@ class Radiation {
     const std::string integrator =
         pin->GetOrAddString("chemistry", "chem_radiation", "constant");
 
-    if constexpr (std::is_same_v<Network_t, H2Network>) {
+    // The number of radiation frequencies of the network in use
+    int n_freq;
+    const std::string network = pin->GetString("chemistry", "network");
+    if (network == "H2") {
       // H2 doesn't use radiation, leave ir unallocated
-    } else if (integrator == "constant") {
+      return;
+    } else if (network == "GOW17") {
+      n_freq = GOW17Network::n_freq;
+    } else {
+      std::cerr << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl
+                << "<chemistry>/network = " << network
+                << " is not a valid option, choose from {H2, GOW17}"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+
+    if (integrator == "constant") {
       // Get parameters
       const Real G0 = pin->GetOrAddReal("chemistry", "radiation_G0", 1e-6);
       const Real cr_rate =
           pin->GetOrAddReal("chemistry", "radiation_CR", 2e-16);
 
       // Assign values in host array
-      HostArray1D<Real> ir_host("chemistry_ir_host", Network_t::n_freq);
+      HostArray1D<Real> ir_host("chemistry_ir_host", n_freq);
       for (size_t i = 0; i < ir_host.size(); i++) {
         ir_host(i) = G0;
       }
@@ -82,15 +91,17 @@ class Radiation {
    * \details A functor rather than a lambda since nvcc won't compile a
    * KOKKOS_LAMBDA returned from a function with a deduced return type. Public
    * since nvcc rejects LineScan's kernels when a template argument is a
-   * private type.
+   * private type. The species indices are runtime values so that every network
+   * shares this functor, e.g. iH2 = species_start + Network_t::IH2.
    *
    * \tparam Dir The direction of the scan, which picks the cell width.
    */
   template <line_scan::Direction Dir>
   struct ColumnDensityFunc {
     DvceArray5D<Real> w0;  ///< The hydro or MHD primitives
-    int species_start;     ///< The index in w0 of the first chemistry scalar
     Real xC;               ///< The total C abundance per H nucleon
+    // The indices in w0 of the species the columns need
+    int iH2, iCO, iHCO_plus, iCHx, iC_plus;
 
     KOKKOS_INLINE_FUNCTION RegisterArray<Real, n_cols> operator()(
         const int m, const int k, const int j, const int i,
@@ -106,14 +117,13 @@ class Radiation {
       }
 
       // Abundances
-      const Real xH2 = w0(m, species_start + Network_t::IH2, k, j, i);
-      const Real xCO = w0(m, species_start + Network_t::ICO, k, j, i);
+      const Real xH2 = w0(m, iH2, k, j, i);
+      const Real xCO = w0(m, iCO, k, j, i);
 
       // Abundances only used to compute xCI
-      const Real xHCO_plus =
-          w0(m, species_start + Network_t::IHCO_plus, k, j, i);
-      const Real xCHx = w0(m, species_start + Network_t::ICHx, k, j, i);
-      const Real xC_plus = w0(m, species_start + Network_t::IC_plus, k, j, i);
+      const Real xHCO_plus = w0(m, iHCO_plus, k, j, i);
+      const Real xCHx = w0(m, iCHx, k, j, i);
+      const Real xC_plus = w0(m, iC_plus, k, j, i);
 
       // Neutral C from conservation, as GOW17's ghost species
       const Real xCI = Kokkos::fmax(xC - xHCO_plus - xCHx - xCO - xC_plus, 0.0);
@@ -134,34 +144,6 @@ class Radiation {
 
  private:
 };
-
-/// The radiation for each chemistry network, one of which is in use
-using RadiationVariant =
-    std::variant<Radiation<H2Network>, Radiation<GOW17Network>>;
-
-/*!
- * \brief Construct the radiation for the network in use
- *
- * \param ppack The MeshBlockPack the chemistry is on
- * \param pin The ParameterInput, which selects the network
- * \return RadiationVariant The radiation, for <chemistry>/network
- */
-inline RadiationVariant MakeRadiation(MeshBlockPack* ppack,
-                                      ParameterInput* pin) {
-  const std::string network = pin->GetString("chemistry", "network");
-  if (network == "H2") {
-    return RadiationVariant(std::in_place_type<Radiation<H2Network>>, ppack,
-                            pin);
-  } else if (network == "GOW17") {
-    return RadiationVariant(std::in_place_type<Radiation<GOW17Network>>, ppack,
-                            pin);
-  }
-  std::cerr << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-            << std::endl
-            << "<chemistry>/network = " << network
-            << " is not a valid option, choose from {H2, GOW17}" << std::endl;
-  std::exit(EXIT_FAILURE);
-}
 
 }  // namespace chemistry
 #endif  // CHEMISTRY_RADIATION_RADIATION_HPP_

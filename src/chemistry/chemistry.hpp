@@ -167,7 +167,7 @@ class Chemistry {
   ParameterInput* my_pin;
 
   // Chemistry radiation, for whichever network is in use
-  const RadiationVariant pchem_rad;
+  const Radiation pchem_rad;
 
   // These indicate if hydro or MHD is in use
   bool const is_hydro_enabled;
