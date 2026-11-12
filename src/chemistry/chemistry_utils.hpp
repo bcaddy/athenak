@@ -120,7 +120,7 @@ template <class network_t, class vec_type, class mat_type>
 KOKKOS_FUNCTION void numerical_jacobian(const network_t& network, const Real t,
                                         const Real dt, const vec_type& y_in,
                                         const mat_type& jac) {
-  RegisterArray<Real, network.neqs> f0, fp;
+  RegisterArray<Real, network_t::neqs> f0, fp;
 
   // Evaluate the unperturbed f0
   network.evaluate_function(t, dt, y_in, f0);
