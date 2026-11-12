@@ -18,6 +18,7 @@
 #include "bvals/bvals.hpp"
 #include "chemistry/network/chemistry_networks.hpp"
 #include "utils/line_scan.hpp"
+#include "utils/register_array.hpp"
 
 namespace chemistry {
 /*!
@@ -29,44 +30,32 @@ namespace chemistry {
  */
 template <typename Network_t>
 class Radiation {
-  /// Whether the network uses radiation
-  static constexpr bool has_radiation = std::is_same_v<Network_t, GOW17Network>;
-
  public:
   Radiation(MeshBlockPack* ppack, ParameterInput* pin) {
     // Select the radiation integrator, name matches Athena++'s --chem_radiation
     const std::string integrator =
         pin->GetOrAddString("chemistry", "chem_radiation", "constant");
 
-    if (integrator == "constant") {
-      if constexpr (has_radiation) {
-        // Get parameters
-        const Real G0 = pin->GetOrAddReal("chemistry", "radiation_G0", 1e-6);
-        const Real cr_rate =
-            pin->GetOrAddReal("chemistry", "radiation_CR", 2e-16);
+    if constexpr (std::is_same_v<Network_t, H2Network>) {
+      // H2 doesn't use radiation, leave ir unallocated
+    } else if (integrator == "constant") {
+      // Get parameters
+      const Real G0 = pin->GetOrAddReal("chemistry", "radiation_G0", 1e-6);
+      const Real cr_rate =
+          pin->GetOrAddReal("chemistry", "radiation_CR", 2e-16);
 
-        // Assign values in host array
-        HostArray1D<Real> ir_host("chemistry_ir_host", Network_t::n_freq);
-        for (size_t i = 0; i < ir_host.size(); i++) {
-          ir_host(i) = G0;
-        }
-        ir_host(ir_host.size() - 1) = cr_rate;
-
-        // Copy to device
-        Kokkos::realloc(ir, ir_host.size());
-        Kokkos::deep_copy(ir, ir_host);
+      // Assign values in host array
+      HostArray1D<Real> ir_host("chemistry_ir_host", Network_t::n_freq);
+      for (size_t i = 0; i < ir_host.size(); i++) {
+        ir_host(i) = G0;
       }
+      ir_host(ir_host.size() - 1) = cr_rate;
+
+      // Copy to device
+      Kokkos::realloc(ir, ir_host.size());
+      Kokkos::deep_copy(ir, ir_host);
     } else if (integrator == "six_ray") {
-      if constexpr (has_radiation) {
-        // TODO: six-ray radiation integrator using LineScan
-      } else {
-        std::cerr << "### FATAL ERROR in " << __FILE__ << " at line "
-                  << __LINE__ << std::endl
-                  << "<chemistry>/chem_radiation = six_ray requires a network "
-                     "that uses radiation, i.e. <chemistry>/network = GOW17"
-                  << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
+      // TODO: six-ray radiation integrator using LineScan
     } else {
       std::cerr << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl
@@ -103,7 +92,7 @@ class Radiation {
     int species_start;     ///< The index in w0 of the first chemistry scalar
     Real xC;               ///< The total C abundance per H nucleon
 
-    KOKKOS_INLINE_FUNCTION Kokkos::Array<Real, n_cols> operator()(
+    KOKKOS_INLINE_FUNCTION RegisterArray<Real, n_cols> operator()(
         const int m, const int k, const int j, const int i,
         const RegionSize& size) const {
       // Cell width along the scan
@@ -134,7 +123,12 @@ class Radiation {
       const Real NH = w0(m, IDN, k, j, i) * dx;
 
       // Return the column densities
-      return {NH, NH * xH2, NH * xCO, NH * xCI};
+      RegisterArray<Real, n_cols> cols;
+      cols[iNH] = NH;
+      cols[iNH2] = NH * xH2;
+      cols[iNCO] = NH * xCO;
+      cols[iNC] = NH * xCI;
+      return cols;
     }
   };
 
