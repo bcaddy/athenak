@@ -283,7 +283,12 @@ class Radiation {
       constexpr Kokkos::Array<Real, Network_t::n_ph> kph_avfac =
           Network_t::kph_avfac;
 
-      RegisterArray<Real, Network_t::n_freq> rad{};
+      // The sum over the rays of each band, zeroed explicitly rather than
+      // relying on RegisterArray's value-initialization
+      RegisterArray<Real, Network_t::n_freq> rad;
+      for (int ifreq = 0; ifreq < Network_t::n_freq; ++ifreq) {
+        rad[ifreq] = 0.0;
+      }
 
       // The cell's indices in the columns, which index real cells from 0
       const int kc = k - ks_, jc = j - js_, ic = i - is_;
@@ -297,27 +302,29 @@ class Radiation {
         const Real NC = col(m, iNC, kc, jc, ic) * col_unit_;
         const Real AV = NH * zd_ / 1.87e21;
 
-        // Photo-reactions, attenuated by dust
-        RegisterArray<Real, Network_t::n_freq> ir;
-        for (int ifreq = 0; ifreq < Network_t::n_ph; ++ifreq) {
-          ir[ifreq] = G0_[iang] * Kokkos::exp(-kph_avfac[ifreq] * AV);
-        }
         // H2, CO and CI self-shielding
-        ir[Network_t::iph_H2] *= Shielding::fShield_H2(NH2, bH2);
-        ir[Network_t::iph_CO] *= Shielding::fShield_CO_V09(NCO, NH2);
-        ir[Network_t::iph_C] *= Shielding::fShield_C(NC, NH2);
+        const Real fs_H2 = Shielding::fShield_H2(NH2, bH2);
+        const Real fs_CO = Shielding::fShield_CO_V09(NCO, NH2);
+        const Real fs_C = Shielding::fShield_C(NC, NH2);
+
+        // Add this ray's field to the sum over the rays. Photo-reactions,
+        // attenuated by dust and, in the H2, CO and CI bands, self-shielding
+        for (int ifreq = 0; ifreq < Network_t::n_ph; ++ifreq) {
+          Real ray = G0_[iang] * Kokkos::exp(-kph_avfac[ifreq] * AV);
+          if (ifreq == Network_t::iph_H2) ray *= fs_H2;
+          if (ifreq == Network_t::iph_CO) ray *= fs_CO;
+          if (ifreq == Network_t::iph_C) ray *= fs_C;
+          rad[ifreq] += ray;
+        }
         // Photoelectric heating
-        ir[Network_t::irad_GPE] = G0_[iang] * Kokkos::exp(-NH * sigmaPE * zd_);
+        rad[Network_t::irad_GPE] +=
+            G0_[iang] * Kokkos::exp(-NH * sigmaPE * zd_);
         // Cosmic rays. Tests NH <= NH0_CR as Athena++ does, so a NaN NH gives
         // a NaN rate
         if (is_cr_shielding_ && !(NH <= NH0_CR)) {
-          ir[Network_t::irad_CR] = cr_rate_ * (NH0_CR / NH);
+          rad[Network_t::irad_CR] += cr_rate_ * (NH0_CR / NH);
         } else {
-          ir[Network_t::irad_CR] = cr_rate_;
-        }
-
-        for (int ifreq = 0; ifreq < Network_t::n_freq; ++ifreq) {
-          rad[ifreq] += ir[ifreq];
+          rad[Network_t::irad_CR] += cr_rate_;
         }
       }
 
