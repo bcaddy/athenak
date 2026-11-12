@@ -27,6 +27,7 @@ namespace chemistry {
 //  \brief container to hold TaskIDs of all chemistry tasks
 struct ChemistryTaskIDs {
   TaskID init_recv;
+  TaskID column_density_scans;
   TaskID update_chemistry;
   TaskID prim_to_cons;
   TaskID restrict_u;
@@ -166,9 +167,6 @@ class Chemistry {
 
   ParameterInput* my_pin;
 
-  // Chemistry radiation, for whichever network is in use
-  const Radiation pchem_rad;
-
   // These indicate if hydro or MHD is in use
   bool const is_hydro_enabled;
   bool const is_mhd_enabled;
@@ -178,6 +176,9 @@ class Chemistry {
 
   // The beginning index of passive scalars reserved for chemisty
   int const chemistry_scalars_first_idx;
+
+  // Chemistry radiation, for whichever network is in use.
+  Radiation pchem_rad;
 
   // Get the correct conserved or primitive arrays array
   DvceArray5D<Real> GetU0();

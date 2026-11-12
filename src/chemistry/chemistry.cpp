@@ -34,7 +34,7 @@ Chemistry::Chemistry(MeshBlockPack* ppack, ParameterInput* pin)
       mu_H(pin->GetOrAddReal("chemistry", "mu_H", 1.4)),
       chemistry_scalars_first_idx(ComputeChemistryScalarsStartIndex()),
       my_pin(pin),
-      pchem_rad(ppack, pin) {
+      pchem_rad(ppack, pin, GetW0(), chemistry_scalars_first_idx) {
   // Verify that units are enables
   if (!pin->DoesBlockExist("units")) {
     std::cerr

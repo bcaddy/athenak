@@ -34,9 +34,19 @@ void Chemistry::AssembleChemistryTasks(
   id.init_recv =
       tl["after_timeintegrator"]->AddTask(&Chemistry::InitRecv, this, none);
 
+  // If the radiation built the six-ray scans then compute the column densities
+  // along all six rays before the chemistry integration. Bound to a named
+  // local since AddTask takes the dependency by non-const reference
+  TaskID update_chemistry_dep = none;
+  if (pchem_rad.scans) {
+    id.column_density_scans = tl["after_timeintegrator"]->AddTask(
+        &Radiation::ComputeColumnDensities, &pchem_rad, none);
+    update_chemistry_dep = id.column_density_scans;
+  }
+
   // Do the chemistry integration on the active cells
   id.update_chemistry = tl["after_timeintegrator"]->AddTask(
-      &Chemistry::UpdateChemistryTask, this, none);
+      &Chemistry::UpdateChemistryTask, this, update_chemistry_dep);
 
   // Update the conserved variables with the new values from the primitive
   // arrays. The ghost cells are then refreshed by the exchange below
