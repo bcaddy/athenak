@@ -72,8 +72,10 @@ Chemistry::~Chemistry() {}
  *
  * \tparam ODE_Solver_t The ODE solver to ues
  * \tparam Network_t The chemistry network to use
+ * \tparam RadFunc_t The radiation functor the network gets its field from
  */
-template <template <typename> class ODE_Solver_t, typename Network_t>
+template <template <typename> class ODE_Solver_t, typename Network_t,
+          typename RadFunc_t>
 void Chemistry::UpdateChemistry() {
   // ------ Collect variables that we'll need -----
   // The primitive grid
@@ -94,7 +96,8 @@ void Chemistry::UpdateChemistry() {
   Real const mu_H_local = mu_H;
 
   // ----- Get radiation stuff -----
-  const auto ir = pchem_rad.ir;
+  // The network calls this once per cell for its radiation field
+  const RadFunc_t rad_func(pchem_rad);
 
   // ----- Load network and ODE solver settings -----
   // Read the files and cache the results. Static variables have static storage
@@ -120,9 +123,9 @@ void Chemistry::UpdateChemistry() {
       KOKKOS_LAMBDA(const int& mb_idx, const int& k, const int& j,
                     const int& i) {
         // Create the chemisty object
-        Network_t chem_net(network_settings, mb_idx, k, j, i, w0, sizes, ir,
-                           density_cgs, mu_H_local, gamma, hydrogen_mass_cgs,
-                           time_cgs, energy_density_cgs);
+        Network_t chem_net(network_settings, mb_idx, k, j, i, w0, sizes,
+                           rad_func, density_cgs, mu_H_local, gamma,
+                           hydrogen_mass_cgs, time_cgs, energy_density_cgs);
 
         // ------ Load cell values ------
         // Chemistry scalars. The loop is based off of the chemical
@@ -156,13 +159,22 @@ void Chemistry::UpdateChemistry() {
 }
 
 // Instantiate the different versions of UpdateChemistry
+template void Chemistry::UpdateChemistry<ode_solvers::ForwardEuler, H2Network,
+                                         Radiation::NoRadiationFunc>();
+template void Chemistry::UpdateChemistry<ode_solvers::KokkosBDF, H2Network,
+                                         Radiation::NoRadiationFunc>();
 template void
-Chemistry::UpdateChemistry<ode_solvers::ForwardEuler, H2Network>();
-template void Chemistry::UpdateChemistry<ode_solvers::KokkosBDF, H2Network>();
+Chemistry::UpdateChemistry<ode_solvers::ForwardEuler, GOW17Network,
+                           Radiation::ConstantRadiationFunc<GOW17Network>>();
 template void
-Chemistry::UpdateChemistry<ode_solvers::ForwardEuler, GOW17Network>();
+Chemistry::UpdateChemistry<ode_solvers::KokkosBDF, GOW17Network,
+                           Radiation::ConstantRadiationFunc<GOW17Network>>();
 template void
-Chemistry::UpdateChemistry<ode_solvers::KokkosBDF, GOW17Network>();
+Chemistry::UpdateChemistry<ode_solvers::ForwardEuler, GOW17Network,
+                           Radiation::ShieldedRadiationFunc<GOW17Network>>();
+template void
+Chemistry::UpdateChemistry<ode_solvers::KokkosBDF, GOW17Network,
+                           Radiation::ShieldedRadiationFunc<GOW17Network>>();
 
 /*!
  * \brief Return the name of the chemical species at scalar_idx

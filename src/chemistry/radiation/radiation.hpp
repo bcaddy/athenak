@@ -32,21 +32,16 @@ class Radiation {
  public:
   Radiation(MeshBlockPack* ppack, ParameterInput* pin,
             const DvceArray5D<Real>& w0, const int species_start,
-            const Real mu_H) {
-    // Select the radiation integrator, name matches Athena++'s --chem_radiation
-    const std::string integrator =
-        pin->GetOrAddString("chemistry", "chem_radiation", "constant");
-
-    // The number of radiation frequencies and the column density species of
-    // the network in use
-    int n_freq;
+            const Real mu_H)
+      : integrator(
+            pin->GetOrAddString("chemistry", "chem_radiation", "constant")) {
+    // The column density species of the network in use
     ColumnDensitySpecies species;
     const std::string network = pin->GetString("chemistry", "network");
     if (network == "H2") {
-      // H2 doesn't use radiation, leave ir unallocated
+      // H2 doesn't use radiation, see NoRadiationFunc
       return;
     } else if (network == "GOW17") {
-      n_freq = GOW17Network::n_freq;
       species =
           GetColumnDensitySpecies<GOW17Network>(ppack, pin, species_start);
       zd_ = GOW17Network::GetSettings(pin, ppack).zd;
@@ -61,37 +56,26 @@ class Radiation {
 
     // The incident radiation field, in units of the Draine 1978 field, and the
     // unshielded cosmic ray ionization rate in s^-1
-    const Real G0 = pin->GetOrAddReal("chemistry", "radiation_G0", 1e-6);
-    const Real cr_rate = pin->GetOrAddReal("chemistry", "radiation_CR", 2e-16);
+    G0_ = pin->GetOrAddReal("chemistry", "radiation_G0", 1e-6);
+    cr_rate_ = pin->GetOrAddReal("chemistry", "radiation_CR", 2e-16);
 
     if (integrator == "constant") {
-      // Assign values in host array
-      HostArray1D<Real> ir_host("chemistry_ir_host", n_freq);
-      for (size_t i = 0; i < ir_host.size(); i++) {
-        ir_host(i) = G0;
-      }
-      ir_host(ir_host.size() - 1) = cr_rate;
-
-      // Copy to device
-      Kokkos::realloc(ir, ir_host.size());
-      Kokkos::deep_copy(ir, ir_host);
+      // Nothing else to read, ConstantRadiationFunc uses G0_ and cr_rate_
     } else if (integrator == "six_ray") {
-      // TODO: compute ir from the six-ray column densities
       // The incident field of each ray, G0 unless set for the face it enters
       // the domain through, as in Athena++
-      G0_[BoundaryFace::inner_x1] =
-          pin->GetOrAddReal("chemistry", "radiation_G0_inner_x1", G0);
-      G0_[BoundaryFace::inner_x2] =
-          pin->GetOrAddReal("chemistry", "radiation_G0_inner_x2", G0);
-      G0_[BoundaryFace::inner_x3] =
-          pin->GetOrAddReal("chemistry", "radiation_G0_inner_x3", G0);
-      G0_[BoundaryFace::outer_x1] =
-          pin->GetOrAddReal("chemistry", "radiation_G0_outer_x1", G0);
-      G0_[BoundaryFace::outer_x2] =
-          pin->GetOrAddReal("chemistry", "radiation_G0_outer_x2", G0);
-      G0_[BoundaryFace::outer_x3] =
-          pin->GetOrAddReal("chemistry", "radiation_G0_outer_x3", G0);
-      cr_rate_ = cr_rate;
+      G0_rays_[BoundaryFace::inner_x1] =
+          pin->GetOrAddReal("chemistry", "radiation_G0_inner_x1", G0_);
+      G0_rays_[BoundaryFace::inner_x2] =
+          pin->GetOrAddReal("chemistry", "radiation_G0_inner_x2", G0_);
+      G0_rays_[BoundaryFace::inner_x3] =
+          pin->GetOrAddReal("chemistry", "radiation_G0_inner_x3", G0_);
+      G0_rays_[BoundaryFace::outer_x1] =
+          pin->GetOrAddReal("chemistry", "radiation_G0_outer_x1", G0_);
+      G0_rays_[BoundaryFace::outer_x2] =
+          pin->GetOrAddReal("chemistry", "radiation_G0_outer_x2", G0_);
+      G0_rays_[BoundaryFace::outer_x3] =
+          pin->GetOrAddReal("chemistry", "radiation_G0_outer_x3", G0_);
       is_cr_shielding_ =
           pin->GetOrAddBoolean("chemistry", "radiation_CR_shielding", false);
       col_unit_ = ppack->punit->density_cgs() * ppack->punit->length_cgs() /
@@ -111,7 +95,9 @@ class Radiation {
   }
   ~Radiation() {}
 
-  DvceArray1D<Real> ir;
+  /// The radiation integrator, <chemistry>/chem_radiation: constant or
+  /// six_ray. The name matches Athena++'s --chem_radiation
+  const std::string integrator;
 
   /// Index of each column density field in the six-ray LineScans
   enum : int { iNH, iNH2, iNCO, iNC, n_cols };
@@ -251,7 +237,7 @@ class Radiation {
      * that its scans exist
      */
     explicit ShieldedRadiationFunc(const Radiation& rad)
-        : G0_(rad.G0_),
+        : G0_(rad.G0_rays_),
           cr_rate_(rad.cr_rate_),
           is_cr_shielding_(rad.is_cr_shielding_),
           zd_(rad.zd_),
@@ -353,6 +339,51 @@ class Radiation {
     int is_, js_, ks_;
   };
 
+  /*!
+   * \brief The radiation field the chemistry network sees in every cell with
+   * <chemistry>/chem_radiation = constant: radiation_G0 in the photo-reaction
+   * and photoelectric heating bands, and radiation_CR in the cosmic ray band.
+   *
+   * \details The same interface as ShieldedRadiationFunc, so the network calls
+   * either the same way. Public since nvcc rejects kernels capturing a private
+   * type.
+   *
+   * \tparam Network_t The chemistry network, which sets the bands, and the
+   * size of the field so it can be returned in registers.
+   */
+  template <typename Network_t>
+  struct ConstantRadiationFunc {
+    /*!
+     * \param rad The radiation, whose radiation_G0 and radiation_CR are used
+     */
+    explicit ConstantRadiationFunc(const Radiation& rad) {
+      for (int ifreq = 0; ifreq < Network_t::n_freq; ++ifreq) {
+        rad_[ifreq] = rad.G0_;
+      }
+      rad_[Network_t::irad_CR] = rad.cr_rate_;
+    }
+
+    /*!
+     * \return The radiation field in each band, the same in every cell
+     */
+    KOKKOS_INLINE_FUNCTION RegisterArray<Real, Network_t::n_freq> operator()(
+        const int m, const int k, const int j, const int i) const {
+      return rad_;
+    }
+
+   private:
+    /// The radiation field in each band
+    RegisterArray<Real, Network_t::n_freq> rad_;
+  };
+
+  /*!
+   * \brief The radiation for networks that don't use it, H2. Built the same
+   * way as the other radiation functors but never called.
+   */
+  struct NoRadiationFunc {
+    explicit NoRadiationFunc(const Radiation& rad) {}
+  };
+
   /// The six-ray column density scans, only allocated for six_ray
   std::unique_ptr<SixRayScans> scans;
 
@@ -369,10 +400,11 @@ class Radiation {
   }
 
  private:
-  // The six-ray inputs, read in the constructor for ShieldedRadiationFunc. See
-  // its members for their meanings
-  RegisterArray<Real, n_rays> G0_;
+  // The inputs to the radiation functors, read in the constructor. See the
+  // functors' members for their meanings
+  Real G0_;  ///< The incident radiation field, constant or default per ray
   Real cr_rate_;
+  RegisterArray<Real, n_rays> G0_rays_;  ///< G0 of each six-ray ray
   bool is_cr_shielding_;
   Real zd_;
   Real col_unit_;

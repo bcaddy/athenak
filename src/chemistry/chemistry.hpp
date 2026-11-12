@@ -72,7 +72,18 @@ class Chemistry {
    */
   TaskStatus UpdateChemistryTask(Driver* d, int stage);
 
-  template <template <typename> class ODE_Solver_t, typename Network_t>
+  /*!
+   * \brief Calls UpdateChemistry with the ODE solver from
+   * <chemistry>/ode_solver
+   *
+   * \tparam Network_t The chemistry network to use
+   * \tparam RadFunc_t The radiation functor the network gets its field from
+   */
+  template <typename Network_t, typename RadFunc_t>
+  void UpdateChemistryWithSolver();
+
+  template <template <typename> class ODE_Solver_t, typename Network_t,
+            typename RadFunc_t>
   void UpdateChemistry();
 
   /*!

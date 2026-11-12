@@ -73,11 +73,17 @@ struct GOW17Settings {
  */
 class GOW17Network {
  public:
+  /*!
+   * \tparam RadFunc_t The radiation functor, Radiation::ConstantRadiationFunc
+   * or Radiation::ShieldedRadiationFunc, called once here for the cell's
+   * radiation field
+   */
+  template <typename RadFunc_t>
   KOKKOS_FUNCTION GOW17Network(GOW17Settings const settings, const int mb_idx,
                                const int k, const int j, const int i,
                                const DvceArray5D<Real> w0,
                                const DualArray1D<RegionSize> sizes,
-                               const DvceArray1D<Real> ir,
+                               const RadFunc_t& rad_func,
                                Real const density_cgs, Real const mu_H,
                                Real const gamma, Real const hydrogen_mass_cgs,
                                Real const units_time_cgs,
@@ -101,7 +107,7 @@ class GOW17Network {
         Leff_CO_max(settings.Leff_CO_max),
         H2_rovib_cooling(settings.H2_rovib_cooling),
         isothermal_temperature_(settings.isothermal_temperature),
-        rad_(ir),
+        rad_(rad_func(mb_idx, k, j, i)),
         is_kgrH2_const(settings.is_kgrH2_const),
         gradv_(SetGradv_(mb_idx, k, j, i, w0, sizes, settings.velocity_cgs,
                          settings.length_cgs, settings.multi_d,
@@ -766,9 +772,9 @@ class GOW17Network {
   // ----Si, from UMIST12
   // (5) h nu + *Si -> Si+
 
-  /// radiation field intensity
-  // RegisterArray<Real, n_freq> rad_;
-  DvceArray1D<Real> rad_;
+  /// radiation field intensity in each band, the cell's value from the
+  /// radiation functor, read on every evaluation of the rates
+  RegisterArray<Real, n_freq> rad_;
 
   /// rates for photo-reactions in s^-1
   mutable RegisterArray<Real, n_ph> kph_;
