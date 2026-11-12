@@ -194,6 +194,15 @@ class GOW17Network {
   // ----- Radiation Constants -----
   static constexpr int n_ph = 6;
   static constexpr int n_freq = n_ph + 2;
+  /// Index of each photo reaction, also its band in the radiation field
+  enum : size_t { iph_C, iph_CHx, iph_CO, iph_OHx, iph_H2, iph_Si };
+  /// Index of the photoelectric heating and cosmic ray bands in the radiation
+  /// field
+  enum : size_t { irad_GPE = n_ph, irad_CR };
+  /// Exponent factor in front of AV for the dust shielding of each photo
+  /// reaction
+  static constexpr Kokkos::Array<Real, n_ph> kph_avfac = {3.76, 2.12, 3.88,
+                                                          2.66, 4.18, 2.61};
 
   // ----- Member Functions -----
   /*!
@@ -757,14 +766,9 @@ class GOW17Network {
   // ----Si, from UMIST12
   // (5) h nu + *Si -> Si+
 
-  /// Reaction Rate enum
-  enum : size_t { iph_C, iph_CHx, iph_CO, iph_OHx, iph_H2, iph_Si };
-
   /// radiation field intensity
   // RegisterArray<Real, n_freq> rad_;
   DvceArray1D<Real> rad_;
-  /// enum for indexing into the rad_ array
-  enum : size_t { irad_GPE = n_ph, irad_CR };
 
   /// rates for photo-reactions in s^-1
   mutable RegisterArray<Real, n_ph> kph_;
