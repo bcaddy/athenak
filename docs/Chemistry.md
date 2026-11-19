@@ -265,3 +265,10 @@ GOW17_mu_iso     = 2.33333333333
 ```
 
 With heating and cooling on, the warm gas cools quickly and the slab expands into it, so the results differ from the paper.
+
+#### Moving PDR with AMR
+
+The same test with adaptive mesh refinement, using the same problem generator. The root mesh has 64 cells and up to two levels of refinement, so the finest level matches the 256 cells of the uniform input file. Blocks are refined on the density slope, which follows the slab edges as they move. The mesh starts with `<refined_region>` blocks around both slab edges so the initial edges are set at the finest level.
+
+- Input File: [PDR_moving_amr.athinput](../../blob/main-chemistry/inputs/chemistry/PDR_moving_amr.athinput)
+- `pgen_name`: PDR_moving
