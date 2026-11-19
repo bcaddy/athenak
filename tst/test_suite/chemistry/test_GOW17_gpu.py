@@ -220,15 +220,18 @@ def run_gow17_cfl_dependence(ode_solver, mpi=False):
         testutils.cleanup()
 
 
-def run_pdr_regression(basename, fiducial_file, mpi=False):
+def run_pdr_regression(basename, fiducial_file, mpi=False, mpi_ranks=None):
     """Run a photodissociation region (PDR) test with six-ray radiation,
     inputs/<basename>_test.athinput, and compare its final output to the known good
-    results from AthenaK in test_suite/chemistry/data/<fiducial_file>."""
+    results from AthenaK in test_suite/chemistry/data/<fiducial_file>. mpi_ranks sets
+    the number of MPI ranks, which can't exceed the number of MeshBlocks; the default
+    is testutils.mpi_run's."""
     RUN = testutils.mpi_run if mpi else testutils.run
+    run_kwargs = {"threads": mpi_ranks} if mpi and mpi_ranks is not None else {}
 
     try:
         input_file = f"inputs/{basename}_test.athinput"
-        results = RUN(input_file)
+        results = RUN(input_file, **run_kwargs)
         assert results, f"{basename} test run failed."
 
         # Load the final output
@@ -285,3 +288,8 @@ def test_pdr_static_gpu():
 def test_pdr_moving_gpu():
     """GPU Test for the moving PDR test problem."""
     run_pdr_regression("PDR_moving", "pdr_moving.npz")
+
+
+def test_pdr_moving_amr_gpu():
+    """GPU Test for the moving PDR test problem with AMR."""
+    run_pdr_regression("PDR_moving_amr", "pdr_moving_amr.npz")
