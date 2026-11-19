@@ -1,0 +1,89 @@
+# AthenaXXX input file for the moving PDR test with the GOW17 network and six-ray
+# radiation
+
+<comment>
+problem   = Moving PDR test with chemistry
+reference = Section 4.2.2 in Gong et al. 2023, arXiv:2305.04965
+
+<job>
+basename  = PDR_moving # problem ID: basename of output filenames
+
+<mesh>
+nghost    = 2         # Number of ghost cells
+nx1       = 256       # Number of zones in X1-direction
+x1min     = 0         # minimum value of X1
+x1max     = 55        # maximum value of X1
+ix1_bc    = outflow   # Inner-X1 boundary condition flag
+ox1_bc    = outflow   # Outer-X1 boundary condition flag
+
+nx2       = 1         # Number of zones in X2-direction
+x2min     = -1        # minimum value of X2
+x2max     = 1         # maximum value of X2
+
+nx3       = 1         # Number of zones in X3-direction
+x3min     = -1        # minimum value of X3
+x3max     = 1         # maximum value of X3
+
+<meshblock>
+nx1       = 16       # Number of cells in each MeshBlock, X1-dir
+
+<time>
+evolution  = dynamic   # dynamic/kinematic/static
+integrator = rk2       # time integration algorithm
+cfl_number = 0.8       # The Courant, Friedrichs, & Lewy (CFL) Number
+nlim       = -1        # cycle limit
+tlim       = 1         # time limit, 1 code unit = 0.978 Myr
+ndiag      = 1         # cycles between diagnostic output
+
+<hydro>
+eos         = ideal             # EOS type
+reconstruct = plm               # spatial reconstruction method
+rsolver     = hllc              # Riemann-solver to be used
+gamma       = 1.666666666666667 # gamma = C_p/C_v
+
+<units>
+# ISM units
+length_cgs  = 3.08567758e+18          # length is 1 pc
+mass_cgs    = 6.882615081124725e+31   # number density is 1 cm^-3
+time_cgs    = 3.08567758e+13          # time is 0.978 Myr, velocity is 1 km/s
+
+<chemistry>
+network                 = GOW17      # Chemistry network to be used
+ode_solver              = kokkos_BDF # ODE solver to be used
+radiation_integrator    = six_ray    # radiation integrator
+radiation_G0            = 0.         # Radiation field relative to Draine (1978)
+radiation_G0_inner_x1   = 6.         # Radiation field at the inner x1 boundary
+radiation_G0_outer_x1   = 6.         # Radiation field at the outer x1 boundary
+radiation_CR            = 2e-16      # Cosmic-ray ionization rate per H
+shielding_fraction_cell = 0.5        # Fraction of each cell's column shielding itself
+
+# chemistry network parameters:
+GOW17_Z_d         = 1.           # dust metallicity
+GOW17_Z_g         = 1.           # gas metallicity
+GOW17_Leff_CO_max = 1.0e18       # max length scale in cm for CO LVG cooling
+GOW17_xHe         = 0.1          # He per H, default = 0.1
+GOW17_xC          = 1.6e-4       # C atom per H, this is Z=1 value, default 1.6e-4
+GOW17_xO          = 3.2e-4       # O atom per H, this is Z=1 value, default 3.2e-4
+GOW17_xSi         = 1.7e-6       # Si atom per H, this is Z=1 value, default 1.7e-6
+
+# chemistry solver parameters
+kokkos_BDF_rtol = 1.0e-2         # relative tolerance, as Athena++'s reltol
+kokkos_BDF_atol = 1.0e-12        # absolute tolerance. Athena++ uses 1e-15, but below
+                                 # ~1e-12 round-off noise in trace species can stall
+                                 # the Kokkos Kernels BDF solver's Newton iterations 
+                                 # near equilibrium
+
+<problem>
+pgen_name    = PDR_moving # problem generator name
+vx_kms       = 5.         # x-velocity of all gas, in km/s
+n_H_warm     = 1e-1       # n_H of the warm gas, the cold slab has n_H = 100
+init_default = 1.0e-6     # initial abundances
+init_H2      = 0.4        # initial H2 abundance
+
+<output1>
+file_type   = tab       # Tabular data dump
+variable    = hydro_w   # variables to be output
+data_format = %.8e      # Optional data format string
+dt          = 1         # time increment between outputs, only the final output is tested
+slice_x2    = 0.0       # slice in x2
+slice_x3    = 0.0       # slice in x3

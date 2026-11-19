@@ -17,7 +17,7 @@
 #include "athena.hpp"
 #include "bvals/bvals.hpp"
 #include "chemistry/network/chemistry_networks.hpp"
-#include "chemistry/radiation.hpp"
+#include "chemistry/radiation/radiation.hpp"
 #include "parameter_input.hpp"
 #include "tasklist/task_list.hpp"
 
@@ -27,6 +27,7 @@ namespace chemistry {
 //  \brief container to hold TaskIDs of all chemistry tasks
 struct ChemistryTaskIDs {
   TaskID init_recv;
+  TaskID column_density_scans;
   TaskID update_chemistry;
   TaskID prim_to_cons;
   TaskID restrict_u;
@@ -71,7 +72,18 @@ class Chemistry {
    */
   TaskStatus UpdateChemistryTask(Driver* d, int stage);
 
-  template <template <typename> class ODE_Solver_t, typename Network_t>
+  /*!
+   * \brief Calls UpdateChemistry with the ODE solver from
+   * <chemistry>/ode_solver
+   *
+   * \tparam Network_t The chemistry network to use
+   * \tparam RadFunc_t The radiation functor the network gets its field from
+   */
+  template <typename Network_t, typename RadFunc_t>
+  void UpdateChemistryWithSolver();
+
+  template <template <typename> class ODE_Solver_t, typename Network_t,
+            typename RadFunc_t>
   void UpdateChemistry();
 
   /*!
@@ -166,9 +178,6 @@ class Chemistry {
 
   ParameterInput* my_pin;
 
-  // Chemistry radiation
-  const chemistry::Radiation pchem_rad;
-
   // These indicate if hydro or MHD is in use
   bool const is_hydro_enabled;
   bool const is_mhd_enabled;
@@ -178,6 +187,9 @@ class Chemistry {
 
   // The beginning index of passive scalars reserved for chemisty
   int const chemistry_scalars_first_idx;
+
+  // Chemistry radiation, for whichever network is in use.
+  Radiation pchem_rad;
 
   // Get the correct conserved or primitive arrays array
   DvceArray5D<Real> GetU0();

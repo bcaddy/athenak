@@ -59,6 +59,7 @@ mu          = 1.27                    # mean molecular weight
 <chemistry>
 network                    = GOW17      # Chemistry network to be used
 ode_solver                 = kokkos_BDF # ODE solver to be used
+radiation_G0               = 1e-6       # Radiation field relative to Draine (1978)
 
 # chemistry network parameters:
 GOW17_Z_d        = 1.           # dust metallicity
