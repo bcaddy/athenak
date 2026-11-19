@@ -77,6 +77,7 @@ class ProblemGenerator {
   void H2Uniform(ParameterInput* pin, const bool restart);
   void GOW17Uniform(ParameterInput* pin, const bool restart);
   void PDRMoving(ParameterInput* pin, const bool restart);
+  void NCREquilibrium(ParameterInput* pin, const bool restart);
   void SelfGravity(ParameterInput *pin, const bool restart);
   void BinaryGravity(ParameterInput *pin, const bool restart);
   void BECollapse(ParameterInput *pin, const bool restart);

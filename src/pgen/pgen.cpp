@@ -959,6 +959,8 @@ void ProblemGenerator::CallProblemGenerator(ParameterInput *pin, bool is_restart
     GOW17Uniform(pin, is_restart);
   } else if (pgen_fun_name.compare("PDR_moving") == 0) {
     PDRMoving(pin, is_restart);
+  } else if (pgen_fun_name.compare("NCR_equilibrium") == 0) {
+    NCREquilibrium(pin, is_restart);
   } else if (pgen_fun_name.compare("gravity") == 0) {
     SelfGravity(pin, is_restart);
   } else if (pgen_fun_name.compare("binary_gravity") == 0) {

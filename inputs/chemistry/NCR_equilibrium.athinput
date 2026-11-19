@@ -1,0 +1,106 @@
+# AthenaXXX input file for the NCR thermal/chemical equilibrium problem. Ported from
+# TIGRESS-NCR inputs/photchem/athinput.photchem_equil. Each cell is an independent
+# one-zone problem:
+#   iprob=0: thermal and chemical equilibrium as a function of n_H
+#   iprob=1: chemical equilibrium as a function of T at fixed n_H, which needs
+#            <chemistry>/NCR_chem_only = true and radiation_integrator = constant
+# e.g. ./athena -i NCR_equilibrium.athinput problem/iprob=1 chemistry/NCR_chem_only=true
+# Hydro is frozen. Unlike TIGRESS there is no equilibrium pre-solve, equilibrium is
+# reached by integrating for a long time; tlim and dt_max set how long and in how
+# many steps. The same problem runs with radiation_integrator = six_ray (iprob=0
+# only), e.g. with a one-sided field radiation_G0 = 0, radiation_G0_inner_x1 = 1.
+#
+# iprob=0 uses TIGRESS's full grid, log10 n_H = -2 to 6 in 161 cells. The cell
+# at log10 n_H = 5.65 lies in a genuinely Hopf-unstable window, log10 n_H ~
+# 5.647-5.663 for G0 = 1, Z = 1, and radiation_CR = 2e-16, where the NCR
+# equations have no stable equilibrium, so BDF takes a very large number of
+# steps there. TIGRESS hides this by capping its iterations. See the NCR
+# Equilibrium test in docs/Chemistry.md. The automated test runs only the cells
+# it compares, n_H < 1e3.
+
+<comment>
+problem   = NCR thermal/chemical equilibrium
+reference = Section 7.1 in Kim et al. 2023, ApJS 264, 10
+
+<job>
+basename  = NCR_equilibrium # problem ID: basename of output filenames
+
+<mesh>
+nghost    = 2         # Number of ghost cells
+nx1       = 161       # Number of zones in X1-direction, one per n_H or T value
+x1min     = 0.0       # minimum value of X1
+x1max     = 161.0     # maximum value of X1
+ix1_bc    = periodic  # Inner-X1 boundary condition flag
+ox1_bc    = periodic  # Outer-X1 boundary condition flag
+
+nx2       = 1         # Number of zones in X2-direction
+x2min     = -0.5      # minimum value of X2
+x2max     = 0.5       # maximum value of X2
+
+nx3       = 1         # Number of zones in X3-direction
+x3min     = -0.5      # minimum value of X3
+x3max     = 0.5       # maximum value of X3
+
+<meshblock>
+nx1       = 161       # Number of cells in each MeshBlock, X1-dir
+
+<time>
+evolution  = kinematic # dynamic/kinematic/static
+integrator = rk2       # time integration algorithm
+cfl_number = 0.3       # The Courant, Friedrichs, & Lewy (CFL) Number
+dt_max     = 1e4       # maximum timestep, the gas is at rest so this sets dt
+nlim       = -1        # cycle limit
+tlim       = 1e5       # time limit, in code units of ~0.978 Myr
+ndiag      = 1         # cycles between diagnostic output
+
+<hydro>
+eos             = ideal             # EOS type
+reconstruct     = plm               # spatial reconstruction method
+rsolver         = advect            # Riemann-solver to be used
+gamma           = 1.666666666666667 # gamma = C_p/C_v
+nscalars        = 0                 # number of passive scalars in hydro
+
+<units>
+# Athena++'s ISM units
+length_cgs  = 3.08567758e+18          # length is 1 pc
+mass_cgs    = 6.882615081124725e+31   # density is 1.4 m_H cm^-3
+time_cgs    = 3.08567758e+13          # time is 1 pc / (km/s)
+mu          = 1.27                    # mean molecular weight
+
+<chemistry>
+network              = NCR        # Chemistry network to be used
+ode_solver           = kokkos_BDF # ODE solver to be used
+kokkos_BDF_rtol      = 1e-6       # relative tolerance
+kokkos_BDF_atol      = 1e-12      # absolute tolerance, >= 1e-12 or round-off noise
+                                  # stalls the BDF Newton iteration near equilibrium
+radiation_integrator = constant   # radiation integrator, iprob=1 requires constant
+radiation_G0         = 1.0        # Radiation field relative to Draine (1978)
+radiation_CR         = 2e-16      # Cosmic-ray ionization rate per H
+
+# chemistry network parameters:
+NCR_Z_g           = 1.0      # gas metallicity
+NCR_Z_d           = 1.0      # dust metallicity
+NCR_xC            = 1.6e-4   # C atom per H, this is the Z=1 value
+NCR_xO            = 3.2e-4   # O atom per H, this is the Z=1 value
+NCR_temp_hot0     = 2e4      # T above which the CIE cooling and x_e blend in, K
+NCR_temp_hot1     = 3.5e4    # T above which H2 and the cold-gas terms are off, K
+NCR_temp_mu_floor = 2.0      # T/mu at or below which net cooling is off, K
+NCR_interp_mode   = 1        # 0=exact, 1=log-log, 2=NQT2, 3=NQT1
+NCR_chem_only     = false    # hold T fixed, set true for iprob=1
+
+<problem>
+pgen_name    = NCR_equilibrium # problem generator name
+iprob        = 0      # 0: equilibrium vs n_H, 1: chemical equilibrium vs T
+log_nH_min   = -2.0   # iprob=0, log10 n_H of the first cell
+log_nH_max   = 6.0    # iprob=0, log10 n_H of the last cell
+nH           = 1.0    # iprob=1, n_H
+log_tgas_min = 1.0    # iprob=1, log10 T of the first cell
+log_tgas_max = 8.0    # iprob=1, log10 T of the last cell
+
+<output1>
+file_type   = tab       # Tabular data dump
+variable    = hydro_w   # variables to be output
+data_format = %24.16e   # full precision, needed to reconstruct x_HI and x_e
+dt          = 1e4       # time increment between outputs
+slice_x2    = 0.0       # slice in x2
+slice_x3    = 0.0       # slice in x3

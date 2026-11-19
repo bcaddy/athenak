@@ -12,5 +12,6 @@
 
 #include "chemistry/network/H2.hpp"
 #include "chemistry/network/gow17.hpp"
+#include "chemistry/network/ncr.hpp"
 
 #endif  // CHEMISTRY_NETWORK_CHEMISTRY_NETWORKS_HPP_

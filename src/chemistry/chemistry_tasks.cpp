@@ -109,6 +109,14 @@ TaskStatus Chemistry::UpdateChemistryTask(Driver* d, int stage) {
       UpdateChemistryWithSolver<
           GOW17Network, Radiation::ConstantRadiationFunc<GOW17Network>>();
     }
+  } else if (network == "NCR") {
+    if (pchem_rad.integrator == "six_ray") {
+      UpdateChemistryWithSolver<
+          NCRNetwork, Radiation::ShieldedRadiationFunc<NCRNetwork>>();
+    } else {
+      UpdateChemistryWithSolver<
+          NCRNetwork, Radiation::ConstantRadiationFunc<NCRNetwork>>();
+    }
   }
 
   return TaskStatus::complete;

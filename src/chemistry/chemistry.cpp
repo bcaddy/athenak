@@ -44,13 +44,16 @@ Chemistry::Chemistry(MeshBlockPack* ppack, ParameterInput* pin)
     std::exit(EXIT_FAILURE);
   }
 
-  // Read all chemistry inputs so that CheckUnusedParameters won't flag them
+  // Read all chemistry inputs so that CheckUnusedParameters won't flag them,
+  // and keep the network settings for UpdateChemistry
   const std::string network = pin->GetString("chemistry", "network");
   const std::string ode_solver = pin->GetString("chemistry", "ode_solver");
   if (network == "H2") {
-    H2Network::GetSettings(pin, pmy_pack);
+    network_settings_cache = H2Network::GetSettings(pin, pmy_pack);
   } else if (network == "GOW17") {
-    GOW17Network::GetSettings(pin, pmy_pack);
+    network_settings_cache = GOW17Network::GetSettings(pin, pmy_pack);
+  } else if (network == "NCR") {
+    network_settings_cache = NCRNetwork::GetSettings(pin, pmy_pack);
   }
   if (ode_solver == "forward_euler") {
     ode_solvers::ForwardEuler<H2Network>::GetSettings(pin, "chemistry");
@@ -92,7 +95,9 @@ void Chemistry::UpdateChemistry() {
   Real const energy_density_cgs = pmy_pack->punit->pressure_cgs();
   Real const density_cgs = pmy_pack->punit->density_cgs();
   Real const hydrogen_mass_cgs = pmy_pack->punit->hydrogen_mass_cgs;
-  Real const gamma = pmy_pack->phydro->peos->eos_data.gamma;
+  // gamma from whichever of hydro or MHD is in use
+  Real const gamma = is_hydro_enabled ? pmy_pack->phydro->peos->eos_data.gamma
+                                     : pmy_pack->pmhd->peos->eos_data.gamma;
   Real const mu_H_local = mu_H;
 
   // ----- Get radiation stuff -----
@@ -100,16 +105,18 @@ void Chemistry::UpdateChemistry() {
   const RadFunc_t rad_func(pchem_rad);
 
   // ----- Load network and ODE solver settings -----
-  // Read the files and cache the results. Static variables have static storage
-  // duration and can't be captured by lambdas, like Kokkos parallel regions. To
-  // get around this the static cached variables are copied to local variables
-  // with automatic duration that can be captured by a lambda
+  // The ODE solver settings are read once and cached. Static variables have
+  // static storage duration and can't be captured by lambdas, like Kokkos
+  // parallel regions. To get around this the static cached variable is copied
+  // to a local variable with automatic duration that can be captured by a
+  // lambda. The network settings were read in the constructor, and are copied
+  // out of the member for the same reason
   static auto const ode_settings_cached =
       ODE_Solver_t<Network_t>::GetSettings(my_pin, "chemistry");
-  static auto const network_settings_cached =
-      Network_t::GetSettings(my_pin, pmy_pack);
   auto const ode_settings = ode_settings_cached;
-  auto const network_settings = network_settings_cached;
+  auto const network_settings =
+      std::get<decltype(Network_t::GetSettings(my_pin, pmy_pack))>(
+          network_settings_cache);
 
   // ----- Get all the loop limits and generate the parallel policy ------
   int const species_start_idx = chemistry_scalars_first_idx;
@@ -141,9 +148,15 @@ void Chemistry::UpdateChemistry() {
         // Load internal energy
         chem_net.y(Network_t::IIE) = w0(mb_idx, IEN, k, j, i);
 
+        // Network hook, run once the state is loaded
+        chem_net.PreSolve();
+
         // ------ Solve the ODEs ------
         ODE_Solver_t ode_solver(ode_settings, chem_net, t_start, dt);
         ode_solver.SolveODE();
+
+        // Network hook, run before the state is written back
+        chem_net.PostSolve();
 
         // ------ Write cell values back out ------
         // Chemistry scalars
@@ -175,6 +188,18 @@ Chemistry::UpdateChemistry<ode_solvers::ForwardEuler, GOW17Network,
 template void
 Chemistry::UpdateChemistry<ode_solvers::KokkosBDF, GOW17Network,
                            Radiation::ShieldedRadiationFunc<GOW17Network>>();
+template void
+Chemistry::UpdateChemistry<ode_solvers::ForwardEuler, NCRNetwork,
+                           Radiation::ConstantRadiationFunc<NCRNetwork>>();
+template void
+Chemistry::UpdateChemistry<ode_solvers::KokkosBDF, NCRNetwork,
+                           Radiation::ConstantRadiationFunc<NCRNetwork>>();
+template void
+Chemistry::UpdateChemistry<ode_solvers::ForwardEuler, NCRNetwork,
+                           Radiation::ShieldedRadiationFunc<NCRNetwork>>();
+template void
+Chemistry::UpdateChemistry<ode_solvers::KokkosBDF, NCRNetwork,
+                           Radiation::ShieldedRadiationFunc<NCRNetwork>>();
 
 /*!
  * \brief Return the name of the chemical species at scalar_idx
@@ -196,6 +221,9 @@ std::string Chemistry::GetSpeciesNames(int const& scalar_idx) {
     } else if (network == "GOW17") {
       species_names.assign(GOW17Network::species_names.begin(),
                            GOW17Network::species_names.end());
+    } else if (network == "NCR") {
+      species_names.assign(NCRNetwork::species_names.begin(),
+                           NCRNetwork::species_names.end());
     }
 
     // Create the mapping

@@ -235,6 +235,11 @@ class H2Network {
     }
   }
 
+  /// Hooks run by UpdateChemistry once the state is loaded and before it is
+  /// written back. Nothing to do for this network
+  KOKKOS_FUNCTION void PreSolve() {}
+  KOKKOS_FUNCTION void PostSolve() {}
+
   template <class vec_type, class mat_type>
   KOKKOS_FUNCTION void evaluate_jacobian(const Real t, const Real dt,
                                          const vec_type& y_in,

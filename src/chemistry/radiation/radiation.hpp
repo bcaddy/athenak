@@ -45,11 +45,20 @@ class Radiation {
       species =
           GetColumnDensitySpecies<GOW17Network>(ppack, pin, species_start);
       zd_ = GOW17Network::GetSettings(pin, ppack).zd;
+    } else if (network == "NCR") {
+      // NCR has no carbon species, so only the H and H2 columns are summed and
+      // NCO = NC = 0; the carbon members are unused
+      species = {};
+      species.iH2 = species_start + NCRNetwork::IH2;
+      species.has_carbon = false;
+      // Read directly rather than through NCRNetwork::GetSettings, which also
+      // builds the rate tables
+      zd_ = pin->GetOrAddReal("chemistry", "NCR_Z_d", 1.0);
     } else {
       std::cerr << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl
                 << "<chemistry>/network = " << network
-                << " is not a valid option, choose from {H2, GOW17}"
+                << " is not a valid option, choose from {H2, GOW17, NCR}"
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
@@ -110,6 +119,11 @@ class Radiation {
     // The indices in w0 of the species the columns need, size_t like the
     // networks' species enums
     std::size_t iH2, iCO, iHCO_plus, iCHx, iC_plus;
+    /// Whether the network has the carbon species. If not, as for NCR, the
+    /// carbon indices are unused and the CO and neutral C columns are 0, so
+    /// the CI band's shielding is H2 cross-shielding only. Defaults to true so
+    /// GOW17's braced initialization of the other members is unchanged
+    bool has_carbon = true;
   };
 
   /*!
@@ -147,16 +161,19 @@ class Radiation {
 
       // Abundances
       const Real xH2 = w0(m, species.iH2, k, j, i);
-      const Real xCO = w0(m, species.iCO, k, j, i);
+      Real xCO = 0.0;
+      Real xCI = 0.0;
+      if (species.has_carbon) {
+        xCO = w0(m, species.iCO, k, j, i);
 
-      // Abundances only used to compute xCI
-      const Real xHCO_plus = w0(m, species.iHCO_plus, k, j, i);
-      const Real xCHx = w0(m, species.iCHx, k, j, i);
-      const Real xC_plus = w0(m, species.iC_plus, k, j, i);
+        // Abundances only used to compute xCI
+        const Real xHCO_plus = w0(m, species.iHCO_plus, k, j, i);
+        const Real xCHx = w0(m, species.iCHx, k, j, i);
+        const Real xC_plus = w0(m, species.iC_plus, k, j, i);
 
-      // Neutral C from conservation, as GOW17's ghost species
-      const Real xCI =
-          Kokkos::fmax(species.xC - xHCO_plus - xCHx - xCO - xC_plus, 0.0);
+        // Neutral C from conservation, as GOW17's ghost species
+        xCI = Kokkos::fmax(species.xC - xHCO_plus - xCHx - xCO - xC_plus, 0.0);
+      }
 
       // Column density of H nuclei through the cell. The species columns are
       // this times their abundance

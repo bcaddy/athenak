@@ -26,7 +26,7 @@ To run with chemistry you need to include the `<chemistry>` block in the input f
 
 | Option                 | Type   | Allowed Values            | Default              | Description                                                                                                                                 |
 | ---------------------- | ------ | ------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| network                | string | H2, GOW17                 | None, mandatory flag | The chemistry network to use. These networks often have their own runtime parameters which are detailed in their respective sections below. |
+| network                | string | H2, GOW17, NCR            | None, mandatory flag | The chemistry network to use. These networks often have their own runtime parameters which are detailed in their respective sections below. |
 | ode_solver             | string | forward_euler, kokkos_BDF | None, mandatory flag | The ODE solver to use. See the [ODE Solvers](ODE-Solvers) page for which solvers are available and any runtime parameters they may have.    |
 | mu_H                   | Real   | any real > 1              | 1.4                  | The mean molecular mass per hydrogen nucleon                                                                                                |
 
@@ -88,6 +88,61 @@ Runtime parameters for the GOW17 network, these go inside the `<chemistry>` bloc
 | GOW17_Leff_CO_max                | Real | any real > 0           | 3.0e20                  | Maximum effective length (cm) for CO cooling                                                                                   |
 | GOW17_H2_rovib_cooling           | bool | true, false            | true                    | Whether to include H2 rovibrational cooling                                                                                    |
 | is_kgrH2_const                   | bool | true, false            | false                   | Whether to use a constant H2 formation rate on grains                                                                          |
+
+### NCR
+
+The NCR network is the reduced hydrogen, carbon, and oxygen photochemistry network of TIGRESS-NCR, [Kim et al. (2023)](https://ui.adsabs.harvard.edu/abs/2023ApJS..264...10K/abstract). It is cheap enough for large galactic-disk simulations while following the cooling and heating of the cold, warm, and hot ISM. This is a port of the TIGRESS-NCR implementation, see [Differences from TIGRESS NCR](#differences-from-tigress-ncr).
+
+Only H2 and H+ are evolved by the ODE solver, along with the internal energy, for a total of 3 equations. Everything else is algebraic and recomputed on every function evaluation:
+
+- $x_\mathrm{HI} = 1 - x_\mathrm{H^+} - 2 x_\mathrm{H_2}$, from conservation.
+- The electron abundance $x_e$ is the solution of $x_e = F(x_e, T)$ at the temperature set by the internal energy, which itself depends on $x_e$. Below `NCR_temp_hot0`, $F = x_\mathrm{H^+} + x_\mathrm{C^+} + x_\mathrm{O^+} + x_{e,\mathrm{mol}}$, with $x_\mathrm{C^+}$ in equilibrium, $x_\mathrm{O^+}$ tied to $x_\mathrm{H^+}$ by charge exchange, and $x_{e,\mathrm{mol}}$ from molecular ions. Above it, $F = x_\mathrm{H^+} + x_{e,\mathrm{He}}(T) + Z_g\, x_{e,\mathrm{metal}}(T)$ from the collisional ionization equilibrium (CIE) table of TIGRESS-NCR, which is embedded in the code. The pair is solved together with a bracketed secant method. $x_e$ is not stored.
+- CO from the equilibrium fit of TIGRESS-NCR, and neutral C and O from conservation.
+- He is fixed at $x_\mathrm{He} = 0.1$.
+
+Heating is by cosmic rays, the photoelectric effect, and H2 formation, pumping, and dissociation. Cooling is by H2 rovibrational lines ([Moseley et al. 2021](https://ui.adsabs.harvard.edu/abs/2021MNRAS.500.3290M/abstract)), C+, CI, OI, CO, Lyα, HI collisional ionization, H recombination and free-free emission, recombination on grains, and nebular lines, and above `NCR_temp_hot0` by the CIE cooling of He and metals, which is blended in with a sigmoid. Above `NCR_temp_hot1` H2 cooling and heating and the cold-gas terms are off. The CO cooling uses the constant velocity gradient `NCR_dvdr`, as TIGRESS-NCR does. The network is stiff, so [Kokkos BDF](ODE-Solvers#kokkos-bdf) is recommended.
+
+The rate coefficients can be computed exactly or interpolated from tables built at startup, set by `NCR_interp_mode`, as in TIGRESS-NCR: 0 is exact, 1 interpolates in log-log, and 2 and 3 use the NQT2 and NQT1 approximations of the logarithm. The tables hold the case B H recombination and HI collisional ionization rates up to high temperature, and the C+ recombination, H2 grain formation, and C+, CI, and OI collisional de-excitation rates in cold gas.
+
+Runtime parameters for the NCR network, these go inside the `<chemistry>` block:
+
+| Option            | Type | Allowed Values       | Default | Description                                                                                                                                         |
+| ----------------- | ---- | -------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| NCR_Z_g           | Real | any real $\geq$ 0    | 1.0     | Gas-phase metallicity relative to solar. Scales `NCR_xC`, `NCR_xO`, and the CIE metal electrons and cooling                                           |
+| NCR_Z_d           | Real | any real $\geq$ 0    | 1.0     | Dust metallicity relative to solar. Scales grain processes and, with six-ray radiation, the dust extinction                                         |
+| NCR_xC            | Real | any real $\geq$ 0    | 1.6e-4  | Carbon abundance per hydrogen nucleon at $Z=1$ (multiplied by `NCR_Z_g`)                                                                             |
+| NCR_xO            | Real | any real $\geq$ 0    | 3.2e-4  | Oxygen abundance per hydrogen nucleon at $Z=1$ (multiplied by `NCR_Z_g`)                                                                             |
+| NCR_temp_hot0     | Real | $\geq 10^4$          | 2e4     | Temperature (K) above which $x_e$ comes from the CIE table and the CIE cooling is blended in. It must be at least $10^4$ K, the bottom of the table  |
+| NCR_temp_hot1     | Real | > `NCR_temp_hot0`    | 3.5e4   | Temperature (K) above which H2 formation, H2 cooling and heating, and the cold-gas cooling are off                                                 |
+| NCR_temp_mu_floor | Real | any real > 0         | 2.0     | $T/\mu$ (K) at or below which net cooling is switched off; net heating still applies                                                                |
+| NCR_dvdr          | Real | any real $\geq$ 0    | 3.240779289444365e-14 | Velocity gradient ($\mathrm{s^{-1}}$) of the CO LVG cooling, a constant input as TIGRESS's `dvdr`. The default is 1 km/s/pc. The effective gradient is at least $v_\mathrm{th,CO}/100$ pc |
+| NCR_interp_mode   | int  | 0, 1, 2, 3           | 1       | How the rate coefficients are computed: 0 exact, 1 log-log tables, 2 NQT2 tables, 3 NQT1 tables                                                     |
+| NCR_chem_only     | bool | true, false          | false   | Hold the temperature fixed, at its value at the start of each step, while the abundances evolve. The internal energy is adjusted as $x_e$ changes. Used by the equilibrium test |
+
+The NCR network uses 5 radiation bands. They are chosen so that both [constant](#constant-radiation) and [six-ray](#six-ray) radiation give NCR's fields without NCR-specific radiation code:
+
+| Band       | Field                                                                                              | Six-ray attenuation                                                                         |
+| ---------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `iph_LW`   | $\chi_\mathrm{LW}$, the Lyman-Werner field. Also used for CO photodissociation                     | dust, $\gamma = 3.74$, i.e. $\sigma_{d,\mathrm{LW}} = 2\times10^{-21}\ \mathrm{cm^2}$       |
+| `iph_H2`   | $\chi_\mathrm{H_2}$, the field that dissociates H2                                                 | dust ($\gamma = 3.74$) and H2 self-shielding                                                |
+| `iph_C`    | $\chi_\mathrm{CI}$, the field that ionizes neutral carbon                                          | dust ($\gamma = 3.74$) and shielding by H2 (no C self-shielding, see below)                 |
+| `irad_GPE` | $\chi_\mathrm{PE}$, the photoelectric heating field                                                | dust, $\sigma_\mathrm{PE} = 10^{-21}\ \mathrm{cm^2}$                                        |
+| `irad_CR`  | $\xi_\mathrm{CR}$, the cosmic-ray ionization rate per H                                            | as GOW17, with `radiation_CR_shielding`                                                     |
+
+The FUV field is the ISRF-weighted mean of $\chi_\mathrm{PE}$ and $\chi_\mathrm{LW}$. With six-ray radiation the dust extinction uses `NCR_Z_d`. NCR has no neutral carbon in its column densities, so the C band gets H2 shielding only. There are no ionizing (LyC) photons, $\xi_\mathrm{ph,HI} = \xi_\mathrm{ph,H_2} = 0$.
+
+#### Differences from TIGRESS NCR
+
+The equilibria match TIGRESS-NCR, see the [NCR Equilibrium](#ncr-equilibrium) test. The known differences are:
+
+- $x_e$ is solved with the temperature in every function evaluation rather than lagged by a step. Transients differ, equilibria do not.
+- H2 above `NCR_temp_hot1` decays by collisional dissociation instead of being set to zero.
+- Constant radiation gives $\chi_\mathrm{H_2} = \chi_\mathrm{LW}$. TIGRESS applies the H2 self-shielding factor at zero column, 0.99994, a $6\times10^{-5}$ effect.
+- Six-ray radiation is new for NCR: it uses the H2 self-shielding and carbon shielding functions shared with GOW17, with no neutral carbon column, and dust-only shielding of CO.
+- TIGRESS uses compiled-in values for some thresholds and abundances and input values for others. AthenaK uses the inputs everywhere: `NCR_temp_hot0` and `NCR_temp_hot1`, and `NCR_xC` and `NCR_xO`.
+- Not ported: the adaptive ray tracing (ART), LyC, and $\xi_\mathrm{ph}$ paths; the local shielding length and local cosmic-ray attenuation; dust temperature balance; TIGRESS's option switches, of which only the defaults are implemented; TIGRESS's explicit subcycling solver; and the feedback of the cooling time on the hydro timestep.
+- Small-value floors and divide-by-zero guards are $10^{-20}$, as in the rest of AthenaK, instead of TIGRESS's $10^{-50}$. Floors applied before taking a logarithm of the rate and CIE tables are $1000$ times the smallest normalized floating-point number, as TIGRESS.
+- With $\xi_\mathrm{CR} = 0$ the CO abundance uses the limit of the CO critical density, where TIGRESS gives NaN.
 
 ## Radiation
 
@@ -265,3 +320,40 @@ GOW17_mu_iso     = 2.33333333333
 ```
 
 With heating and cooling on, the warm gas cools quickly and the slab expands into it, so the results differ from the paper.
+
+### NCR Equilibrium
+
+The thermal and chemical equilibrium test of the NCR network, from Section 7.1 of [Kim et al. (2023)](https://ui.adsabs.harvard.edu/abs/2023ApJS..264...10K/abstract) and a port of the TIGRESS-NCR `photchem_equil` problem. It is a 1D row of 161 independent one-zone problems with constant radiation, $G_0 = 1$ and $\xi_\mathrm{CR} = 2\times10^{-16}\ \mathrm{s^{-1}}$. Every cell starts at rest with $x_\mathrm{H^+} = 0.01$ and $x_\mathrm{H_2} = 0$. The hydro is frozen with `evolution = kinematic`, the `advect` Riemann solver, and zero velocity. Unlike TIGRESS there is no equilibrium pre-solve: the network is integrated until it reaches equilibrium, with `tlim` and `dt_max` in `<time>` setting how long and in how many steps.
+
+- `iprob = 0`: thermal and chemical equilibrium as a function of density. $n_\mathrm{H}$ is log-spaced from $10^{-2}$ to $10^6\ \mathrm{cm^{-3}}$ and the gas starts at $P = 1.4\, n_\mathrm{H} k_B \times 10^3$ K, TIGRESS's $T/\mu = 10^3$ K.
+- `iprob = 1`: chemical equilibrium as a function of temperature. $T$ is log-spaced from 10 to $10^8$ K at $n_\mathrm{H} = 1\ \mathrm{cm^{-3}}$ and held fixed with `NCR_chem_only = true`. The initial internal energy is set from the target $T$ with $x_e$ in equilibrium at that $T$.
+
+The position along each grid comes from the global cell index, so any MeshBlock or MPI decomposition gives the same problem.
+
+Near $n_\mathrm{H} = 10^{5.65}\ \mathrm{cm^{-3}}$ the `iprob = 0` problem has no stable equilibrium. For $G_0 = 1$, $Z = 1$, and $\xi_\mathrm{CR} = 2\times10^{-16}\ \mathrm{s^{-1}}$ the equilibrium is Hopf-unstable for $\log_{10} n_\mathrm{H} \approx 5.647$–$5.663$: at $\log_{10} n_\mathrm{H} = 5.65$, with TIGRESS's default `dvdr`, the Jacobian of the NCR equations at the equilibrium has the eigenvalues $+155 \pm 3405i$ per code time unit, so the gas oscillates about it with a growing amplitude instead of settling. The cause is H2 UV-pumping heating, which through its temperature-dependent critical density grows as $T^{0.93}$, faster than the OI cooling that balances it, $\propto T^{0.62\text{–}0.73}$. The cell at $\log_{10} n_\mathrm{H} = 5.65$ of the default 161-cell grid lies in this window, and BDF takes a very large number of steps there. TIGRESS hides this by capping its equilibrium iterations, so its own reference at $\log_{10} n_\mathrm{H} = 5.65$ is an unconverged snapshot.
+
+- Input File: [NCR_equilibrium.athinput](../../blob/main-chemistry/inputs/chemistry/NCR_equilibrium.athinput)
+- `pgen_name`: NCR_equilibrium
+
+Problem generator parameters, all are within the `<problem>` block unless otherwise specified:
+
+| Option                      | Type | Default   | Description                                                                                    |
+| --------------------------- | ---- | --------- | ---------------------------------------------------------------------------------------------- |
+| iprob                       | int  | mandatory | 0 for equilibrium as a function of $n_\mathrm{H}$, 1 for chemical equilibrium as a function of $T$ |
+| log_nH_min                  | Real | -2.0      | `iprob = 0`: $\log_{10} n_\mathrm{H}$ of the first cell, in cm$^{-3}$                          |
+| log_nH_max                  | Real | 6.0       | `iprob = 0`: $\log_{10} n_\mathrm{H}$ of the last cell, in cm$^{-3}$                           |
+| nH                          | Real | 1.0       | `iprob = 1`: $n_\mathrm{H}$ in cm$^{-3}$                                                       |
+| log_tgas_min                | Real | 1.0       | `iprob = 1`: $\log_{10} T$ of the first cell, in K                                             |
+| log_tgas_max                | Real | 8.0       | `iprob = 1`: $\log_{10} T$ of the last cell, in K                                              |
+| chemistry/network           | string | mandatory | Must be `NCR`                                                                                |
+| chemistry/NCR_chem_only     | bool | false     | Must be true for `iprob = 1`                                                                   |
+| chemistry/radiation_integrator | string | constant | Must be `constant` for `iprob = 1`. `iprob = 0` also runs with `six_ray`, e.g. lit from one face with `radiation_G0_inner_x1`, though there is no reference solution for it |
+
+The tab output uses `data_format = %24.16e`, which is needed to recover $x_\mathrm{HI} \approx 10^{-10}$ in hot gas and $x_e$ from the output.
+
+The automated test, `tst/test_suite/chemistry/test_NCR_gpu.py`, is a port of TIGRESS-NCR's `equil.py`. It runs both problems for every `NCR_interp_mode` and for $Z_g = Z_d$ = 0.01, 0.1, 1, and $10^{0.5}$, and compares them with the TIGRESS-NCR reference solutions in `tst/test_suite/chemistry/data/ncr_equilibrium.npz`:
+
+- `iprob = 0`: $P/k_B$, $x_\mathrm{H^+}$, and $x_\mathrm{H_2}$ against the unshielded reference solutions, to a relative error of $10^{-2}$, for $n_\mathrm{H} < 10^3\ \mathrm{cm^{-3}}$, the same rows that TIGRESS's `equil.py` compares. The test runs only these 100 cells, $n_\mathrm{H} = 10^{-2}$ to $10^{2.95}\ \mathrm{cm^{-3}}$ in steps of 0.05 dex, which also keeps it clear of the unstable window above.
+- `iprob = 1`: $x_\mathrm{HI}$, $x_\mathrm{H_2}$, and $x_e$ against TIGRESS's exact-mode solution from a converged rerun of TIGRESS-NCR (commit `118ffe56acd7712ace476e1e687a234a96fd5577`). TIGRESS's stored references stop the equilibrium iteration once the elapsed time reaches the problem generator's $dt = 10^5$, while the lagged-$x_e$ iteration is still moving, which leaves $x_e$ off by up to $5$–$8\times10^{-4}$ at $Z \ge 1$, $4\times10^{-3}$ at $Z = 0.1$, and $10^{-2}$ at $Z = 0.01$. The rerun drops that stop and iterates until the per-iteration relative changes of $x_\mathrm{H^+}$, $x_e$, and $x_\mathrm{HI}$ are below $10^{-13}$, with the physics unchanged; the test's docstring has the details. The tolerances are TIGRESS's per-mode relative tolerances: $2$–$3\times10^{-4}$ for exact and log-log, $5\times10^{-3}$ for NQT2, and $2\times10^{-2}$ for NQT1. $x_e$ is not an output, so it is recovered from the pressure, $P = n_\mathrm{H} k_B T (1.1 + x_e - x_\mathrm{H_2})$. Above `NCR_temp_hot1`, where TIGRESS sets $x_\mathrm{H_2}$ to zero, $x_\mathrm{H_2}$ is only checked to be below $5\times10^{-14}$.
+
+The CPU and MPI tests run the log-log mode at $Z = 1$ only.

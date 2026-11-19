@@ -8,11 +8,13 @@
 //! \file chemistry.hpp
 //  \brief definitions for Chemistry class
 
+#include <cstdlib>
 #include <iostream>
 #include <map>
 #include <memory>
 #include <string>
 #include <tuple>
+#include <variant>
 
 #include "athena.hpp"
 #include "bvals/bvals.hpp"
@@ -146,6 +148,15 @@ class Chemistry {
       num_species = H2Network::neqs - 1;
     } else if (network == "GOW17") {
       num_species = GOW17Network::neqs - 1;
+    } else if (network == "NCR") {
+      num_species = NCRNetwork::neqs - 1;
+    } else {
+      std::cerr << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl
+                << "<chemistry>/network = " << network
+                << " is not a valid option, choose from {H2, GOW17, NCR}"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
     }
 
     return num_species;
@@ -170,6 +181,14 @@ class Chemistry {
   int get_chemistry_scalars_last_idx() const {
     return chemistry_scalars_first_idx + nscalars_chemistry - 1;
   }
+  // The chemistry radiation, e.g. for problem generators that need the field
+  const Radiation& GetRadiation() const { return pchem_rad; }
+  // The settings of the network in use, e.g. for problem generators. Settings_t
+  // is the network's settings type, e.g. NCRSettings
+  template <typename Settings_t>
+  const Settings_t& GetNetworkSettings() const {
+    return std::get<Settings_t>(network_settings_cache);
+  }
 
  private:
   // ptr to MeshBlockPack containing this chemistry. note that this is a const
@@ -190,6 +209,12 @@ class Chemistry {
 
   // Chemistry radiation, for whichever network is in use.
   Radiation pchem_rad;
+
+  // The settings of the network in use, read once in the constructor. A member
+  // rather than a static cache so that any Views the settings own are freed with
+  // the MeshBlockPack, before Kokkos::finalize
+  std::variant<std::monostate, H2Settings, GOW17Settings, NCRSettings>
+      network_settings_cache;
 
   // Get the correct conserved or primitive arrays array
   DvceArray5D<Real> GetU0();
