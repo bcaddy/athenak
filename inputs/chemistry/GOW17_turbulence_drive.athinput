@@ -1,0 +1,84 @@
+# Driven turbulence, hydro only, to make the shared initial condition for the
+# AthenaK semi-implicit against Athena++ CVODE comparison. No <chemistry> block,
+# so the chemistry module is absent and this run is cheap; the snapshot it
+# produces is converted to Athena 4.2 VTK and read by both codes.
+
+<comment>
+problem   = driven turbulence, hydro only
+
+<job>
+basename  = drive
+
+<mesh>
+nghost    = 2
+nx1       = 64
+x1min     = -16.0
+x1max     = 16.0
+ix1_bc    = periodic
+ox1_bc    = periodic
+
+nx2       = 64
+x2min     = -16.0
+x2max     = 16.0
+ix2_bc    = periodic
+ox2_bc    = periodic
+
+nx3       = 64
+x3min     = -16.0
+x3max     = 16.0
+ix3_bc    = periodic
+ox3_bc    = periodic
+
+<meshblock>
+nx1       = 64
+nx2       = 64
+nx3       = 64
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 12.0       # ~2 crossing times at 5 km/s across 32 pc
+ndiag      = 100
+
+<hydro>
+eos             = ideal
+reconstruct     = plm
+rsolver         = hllc
+gamma           = 1.666666666666667
+nscalars        = 0
+# Without floors the driven run goes NaN between t = 2 and t = 4: the strong
+# rarefactions the forcing drives produce negative pressures at this Mach
+# number. The values are far below the physical state (n_H = 10, T = 1e4 K).
+dfloor          = 1.0e-1
+pfloor          = 1.0e+0
+
+<units>
+# ISM units: 1 pc, n_H = 1 cm^-3, 1 km/s. The time unit is pc/(km/s) = 0.978 Myr.
+length_cgs  = 3.0856775809623245e+18
+mass_cgs    = 6.882615081124725e+31
+time_cgs    = 3.08567758e+13
+mu          = 1.27
+
+<turb_driving>
+nlow  = 1
+nhigh = 2
+tcorr = 1.0            # ~ L / (2 pi u_rms) for u_rms = 5 km/s across 32 pc
+dedt  = 2.0            # ~ u_rms^3 / (2 L)
+expo  = 1.666666666666667
+
+<problem>
+pgen_name = GOW17_turb
+n_H       = 10.0
+T_init    = 1.0e4
+mu_H      = 1.4
+
+<output1>
+file_type = hst
+dt        = 0.1
+
+<output2>
+file_type = bin
+variable  = hydro_w
+dt        = 2.0
