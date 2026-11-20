@@ -12,10 +12,9 @@ import numpy as np
 
 ode_solvers = ["kokkos_BDF"]
 
-# These come from AthenaK (kokkos_BDF) with the Draine (2011) errata O I-H2 rate
-# coefficients, at t=1e4. Equilibrium is reached somewhere around t=1e2 or 1e3 but we're
-# running the test longer to let any potential small errors compound into something
-# easier to detect.
+# Final state at t=1e4 from AthenaK with the kokkos_BDF solver. Equilibrium is reached
+# somewhere around t=1e2 or 1e3 but we're running the test longer to let any potential
+# small errors compound into something easier to detect.
 fiducial_data = {
     "time": 1e4,
     "cycle": 28,
