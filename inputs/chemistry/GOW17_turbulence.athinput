@@ -1,0 +1,96 @@
+# AthenaK, GOW17 on the shared field, with the semi-implicit solver or, with
+# chemistry/ode_solver=kokkos_BDF, Kokkos BDF at the CVODE tolerances of
+# turb_athenapp.athinput (rtol = 1e-2, atol = 1e-15 on every variable, including
+# the internal energy, as Athena++ applies abstol when abstol_E is unset).
+#
+# Decaying turbulence: the velocity field is whatever the shared VTK file holds,
+# with no forcing after t = 0. The hydro scheme (rk2, plm, hllc) matches
+# turb_athenapp.athinput, so the remaining differences are the ODE solver and the
+# two codes' hydro implementations. run.sh sets the resolution, the case and the
+# solver on the command line.
+
+<comment>
+problem   = GOW17 chemistry on a shared turbulent field
+
+<job>
+basename  = turb_si
+
+<mesh>
+nghost    = 2
+nx1       = 64
+x1min     = -16.0
+x1max     = 16.0
+ix1_bc    = periodic
+ox1_bc    = periodic
+
+nx2       = 64
+x2min     = -16.0
+x2max     = 16.0
+ix2_bc    = periodic
+ox2_bc    = periodic
+
+nx3       = 64
+x3min     = -16.0
+x3max     = 16.0
+ix3_bc    = periodic
+ox3_bc    = periodic
+
+<meshblock>
+nx1       = 32
+nx2       = 32
+nx3       = 32
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 2.0454   # exactly 2 Myr at 0.9778 Myr per code unit
+ndiag      = 100
+
+<hydro>
+eos             = ideal
+reconstruct     = plm
+rsolver         = hllc
+gamma           = 1.666666666666667
+nscalars        = 0
+dfloor          = 1.0e-1
+pfloor          = 1.0e+0
+
+<units>
+# ISM units, identical to Athena++'s default unit_system = ism:
+# [length] = pc, [mass] = 1.4 m_H pc^3, [time] = pc/(km/s) = 0.978 Myr.
+length_cgs  = 3.0856775809623245e+18
+mass_cgs    = 6.882615081124725e+31
+time_cgs    = 3.08567758e+13
+mu          = 1.27
+
+<chemistry>
+network                    = GOW17
+ode_solver                 = semi_implicit
+radiation_G0               = 1.0e-6
+radiation_CR               = 2.0e-16
+GOW17_Z_d                  = 1.0
+GOW17_Z_g                  = 1.0
+GOW17_xHe                  = 0.1
+GOW17_xC                   = 1.6e-4
+GOW17_xO                   = 3.2e-4
+GOW17_xSi                  = 1.7e-6
+is_kgrH2_const             = true
+semi_implicit_dt_sub_frac  = 0.1
+kokkos_BDF_rtol            = 1.0e-2
+kokkos_BDF_atol            = 1.0e-15
+
+<problem>
+pgen_name   = GOW17_read_vtk
+vtkfile     = shared_ic64.vtk
+r_init      = 1.0e-6
+
+<output1>
+file_type = hst
+dt        = 0.005
+
+<output2>
+file_type = bin
+variable  = hydro_w
+dt        = 0.02        # ~100 frames to tlim, for the slice movie
