@@ -31,17 +31,22 @@ struct SemiImplicitSettings {
 };
 
 namespace semi_implicit_detail {
-/// True if every index in the sequence is distinct and below `n`
+/// True if every index in the sequence is distinct and below `n`; an empty sequence is
+/// valid
 template <int... K>
 constexpr bool IsValidOrder(std::integer_sequence<int, K...>, const int n) {
-  constexpr int idx[] = {K...};
-  for (std::size_t a = 0; a < sizeof...(K); a++) {
-    if (idx[a] < 0 || idx[a] >= n) return false;
-    for (std::size_t b = a + 1; b < sizeof...(K); b++) {
-      if (idx[a] == idx[b]) return false;
+  if constexpr (sizeof...(K) == 0) {
+    return true;
+  } else {
+    constexpr int idx[] = {K...};
+    for (std::size_t a = 0; a < sizeof...(K); a++) {
+      if (idx[a] < 0 || idx[a] >= n) return false;
+      for (std::size_t b = a + 1; b < sizeof...(K); b++) {
+        if (idx[a] == idx[b]) return false;
+      }
     }
+    return true;
   }
-  return true;
 }
 
 /// True if the network sets `custom_species_update = true`
@@ -114,6 +119,7 @@ class SemiImplicit {
   KOKKOS_FUNCTION
   ~SemiImplicit() = default;
 
+  static_assert(ode_t::UpdateOrder::size() > 0, "UpdateOrder must not be empty");
   static_assert(semi_implicit_detail::IsValidOrder(typename ode_t::UpdateOrder{},
                                                    ode_t::IIE),
                 "UpdateOrder must list distinct species indices below IIE");
