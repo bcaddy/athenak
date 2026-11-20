@@ -8,6 +8,8 @@
 //! \file gow17.hpp
 //  \brief The implementation for the struct for the GOW17 chemistry network
 
+#include <utility>
+
 #include <Kokkos_NumericTraits.hpp>
 
 #include "athena.hpp"
@@ -143,6 +145,20 @@ class GOW17Network {
   static constexpr std::array<std::string_view, neqs - 1> species_names = {
       "He+", "OHx", "CHx", "CO",  "C+", "HCO+",
       "H2",  "H+",  "H3+", "H2+", "O+", "Si+"};
+
+  /// Species order for the semi-implicit solver. Each species reads the new
+  /// values of those before it: He+ feeds H+, C+, H2+ and O+; the H2+ -> H3+
+  /// chain comes before the ions it creates; CHx and OHx before CO; H2 last,
+  /// since it changes slowly and every ion reacts with it. HCO+ is not listed:
+  /// CO and HCO+ create each other, and UpdateSpecies<ICO> solves them together.
+  using UpdateOrder =
+      std::integer_sequence<int, IHE_plus, ISi_plus, IH2_plus, IH3_plus,
+                            IH_plus, IO_plus, IC_plus, ICHx, IOHx, ICO, IH2>;
+
+  /// Species whose relative change limits the semi-implicit substep. The ions
+  /// relax to equilibrium within a substep and need no limit; H2 and CO are the
+  /// slow species that carry the evolution.
+  using StepLimitingSpecies = std::integer_sequence<int, IH2, ICO>;
 
   /*!
    * \brief Abundances of the ghost species
@@ -686,6 +702,131 @@ class GOW17Network {
     UpdateRates_(y_in, ghosts);
 
     return ghosts;
+  }
+
+  /// The semi-implicit solver calls UpdateSpecies<K> for each species
+  static constexpr bool custom_species_update = true;
+
+  /*!
+   * \brief One backward-Euler step of species K for the semi-implicit solver,
+   * y_K = (y_K^n + h C) / (1 + h D), with C and D from the current state.
+   *
+   * \details Written per species so that each step evaluates only its own
+   * terms. He+, Si+, H+, O+ and C+ are created by ionizing a neutral X0 that is
+   * not stored but is the remainder of its element, x_X0 = x_tot - x_X+ - ....
+   * With a the total ionization rate of X0 and C' the other creation terms, the
+   * ion equation
+   *   dx_X+/dt = a x_X0 + C' - D x_X+
+   * is written as
+   *   dx_X+/dt = a (x_X0 + x_X+) + C' - (a + D) x_X+,
+   * which has the same right-hand side. For C' = D = 0, the backward Euler step
+   * of this form gives x_X0(new) = x_X0 / (1 + h a), a backward Euler step for
+   * the neutral. The first form gives x_X0(new) = x_X0 (1 - h a), a forward
+   * Euler step that goes negative for h > 1/a.
+   *
+   * \param y The state, updated in place
+   * \param y_n The state at the start of the substep
+   * \param g The ghost species at the start of the substep
+   * \param h The substep size
+   */
+  template <int K, class vec_type>
+  KOKKOS_FUNCTION void UpdateSpecies(const vec_type& y, const Real* y_n,
+                                     const GhostSpecies& g,
+                                     const Real h) const {
+    Real c, d;
+    if constexpr (K == IHE_plus) {
+      const Real a = kcr_[1];
+      c = a * (g.He + y[IHE_plus]);
+      d = k2body_[i2body_Hep_H2] * y[IH2] + k2body_[i2body_Hep_CO] * y[ICO] +
+          k2body_[i2body_Hep_e] * g.e + k2body_[i2body_Hep_H2_H2p] * y[IH2] +
+          k2body_[i2body_Hep_OH] * y[IOHx] + kgr_[igr_Hep] + a;
+    } else if constexpr (K == ISi_plus) {
+      const Real a = kcr_[6] + kph_[iph_Si];
+      c = a * (g.Si + y[ISi_plus]);
+      d = k2body_[i2body_Sip_e] * g.e + kgr_[igr_Sip] + a;
+    } else if constexpr (K == IH2_plus) {
+      c = kcr_[0] * y[IH2] + k2body_[i2body_Hep_H2_H2p] * y[IHE_plus] * y[IH2];
+      d = k2body_[i2body_H2p_H2] * y[IH2] + k2body_[i2body_H2p_H] * g.H;
+    } else if constexpr (K == IH3_plus) {
+      c = k2body_[i2body_H2p_H2] * y[IH2_plus] * y[IH2];
+      d = k2body_[i2body_H3p_C] * g.C + k2body_[i2body_H3p_O] * g.O +
+          k2body_[i2body_H3p_CO] * y[ICO] + k2body_[i2body_H3p_e] * g.e +
+          k2body_[i2body_H3p_e_3H] * g.e + k2body_[i2body_H3p_O_H2] * g.O;
+    } else if constexpr (K == IH_plus) {
+      const Real a = kcr_[2] + k2body_[i2body_H_e] * g.e;
+      c = a * (g.H + y[IH_plus]) +
+          k2body_[i2body_Hep_H2] * y[IHE_plus] * y[IH2] +
+          k2body_[i2body_H2p_H] * y[IH2_plus] * g.H +
+          k2body_[i2body_Op_H] * y[IO_plus] * g.H;
+      d = k2body_[i2body_Hp_e] * g.e + k2body_[i2body_Hp_O] * g.O +
+          kgr_[igr_Hp] + a;
+    } else if constexpr (K == IO_plus) {
+      const Real a = k2body_[i2body_Hp_O] * y[IH_plus];
+      c = k2body_[i2body_Hep_OH] * y[IHE_plus] * y[IOHx] +
+          a * (g.O + y[IO_plus]);
+      d = k2body_[i2body_Op_H] * g.H + k2body_[i2body_Op_H2_OH] * y[IH2] +
+          k2body_[i2body_Op_H2] * y[IH2] + a;
+    } else if constexpr (K == IC_plus) {
+      const Real a = kcr_[3] + kph_[iph_C];
+      c = a * (g.C + y[IC_plus]) +
+          k2body_[i2body_Hep_CO] * y[IHE_plus] * y[ICO];
+      d = k2body_[i2body_Cp_H2] * y[IH2] + k2body_[i2body_Cp_OH] * y[IOHx] +
+          k2body_[i2body_Cp_e] * g.e + k2body_[i2body_Cp_H2_e] * y[IH2] +
+          kgr_[igr_Cp] + a;
+    } else if constexpr (K == ICHx) {
+      c = k2body_[i2body_H3p_C] * y[IH3_plus] * g.C +
+          k2body_[i2body_Cp_H2] * y[IC_plus] * y[IH2];
+      d = k2body_[i2body_CH_O] * g.O + k2body_[i2body_CH_H] * g.H +
+          kph_[iph_CHx];
+    } else if constexpr (K == IOHx) {
+      c = k2body_[i2body_H3p_O] * y[IH3_plus] * g.O +
+          k2body_[i2body_Op_H2_OH] * y[IO_plus] * y[IH2];
+      d = k2body_[i2body_Cp_OH] * y[IC_plus] + k2body_[i2body_OH_C] * g.C +
+          k2body_[i2body_OH_O] * g.O + k2body_[i2body_Hep_OH] * y[IHE_plus] +
+          kph_[iph_OHx];
+    } else if constexpr (K == ICO) {
+      // CO and HCO+ together, backward Euler on the 2x2
+      //   (1 + d1 h) CO - b h HCO+ = CO^n + a h
+      //   -cc h CO + (1 + d2 h) HCO+ = HCO+^n + f h
+      // b <= d2 and cc <= d1, so det >= 1 + (d1 + d2) h > 0 and both solutions
+      // are sums of non-negative terms.
+      const Real u = units_time_cgs;
+      const Real a = u * (k2body_[i2body_CH_O] * y[ICHx] * g.O +
+                          k2body_[i2body_OH_C] * y[IOHx] * g.C);
+      const Real b = u * k2body_[i2body_HCOp_e] * g.e;
+      const Real d1 = u * (kcr_[4] + kcr_[5] +
+                           k2body_[i2body_H3p_CO] * y[IH3_plus] +
+                           k2body_[i2body_Hep_CO] * y[IHE_plus] + kph_[iph_CO]);
+      const Real f = u * k2body_[i2body_Cp_OH] * y[IC_plus] * y[IOHx];
+      const Real cc = u * (kcr_[5] + k2body_[i2body_H3p_CO] * y[IH3_plus]);
+      const Real d2 = u * k2body_[i2body_HCOp_e] * g.e;
+      const Real A = 1.0 + d1 * h;
+      const Real B = 1.0 + d2 * h;
+      const Real det = A * B - b * cc * h * h;
+      y[ICO] = (B * (y_n[ICO] + a * h) + b * h * (y_n[IHCO_plus] + f * h)) / det;
+      y[IHCO_plus] = (y_n[IHCO_plus] + f * h + cc * h * y[ICO]) / B;
+      return;
+    } else if constexpr (K == IH2) {
+      c = k2body_[i2body_H3p_C] * y[IH3_plus] * g.C +
+          k2body_[i2body_H3p_O] * y[IH3_plus] * g.O +
+          k2body_[i2body_H3p_CO] * y[IH3_plus] * y[ICO] +
+          k2body_[i2body_H3p_e] * y[IH3_plus] * g.e +
+          k2body_[i2body_H2_H2] * y_n[IH2] * y_n[IH2] +
+          k2body_[i2body_CH_H] * y[ICHx] * g.H +
+          k2body_[i2body_H3p_O_H2] * y[IH3_plus] * g.O +
+          k2body_[i2body_H2p_H] * y[IH2_plus] * g.H + kgr_[igr_H] * g.H;
+      d = kcr_[0] + k2body_[i2body_Hep_H2] * y[IHE_plus] +
+          k2body_[i2body_Cp_H2] * y[IC_plus] +
+          k2body_[i2body_H2p_H2] * y[IH2_plus] + k2body_[i2body_H2_H] * g.H +
+          2.0 * k2body_[i2body_H2_H2] * y_n[IH2] +
+          k2body_[i2body_Hep_H2_H2p] * y[IHE_plus] +
+          k2body_[i2body_Cp_H2_e] * y[IC_plus] +
+          k2body_[i2body_Op_H2_OH] * y[IO_plus] +
+          k2body_[i2body_Op_H2] * y[IO_plus] + kph_[iph_H2];
+    } else {
+      static_assert(K < 0, "no semi-implicit update for this species");
+    }
+    y[K] = (y_n[K] + h * units_time_cgs * c) / (1.0 + h * units_time_cgs * d);
   }
 
   /*!
