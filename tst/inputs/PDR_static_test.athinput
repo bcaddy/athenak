@@ -1,0 +1,91 @@
+# AthenaXXX input file for the static PDR test with the GOW17 network and six-ray
+# radiation. Ported from Athena++ inputs/chemistry/athinput.pdr_static
+# This freezes hydro and sets dt_max. The six-ray columns are recomputed each step, 
+# so the results depend on the number of steps which is why dt_max is set
+
+<comment>
+problem   = Static PDR test with chemistry
+reference = Section 4.2.1 in Gong et al. 2023, arXiv:2305.04965
+
+<job>
+basename  = PDR_static # problem ID: basename of output filenames
+
+<mesh>
+nghost    = 2         # Number of ghost cells
+nx1       = 512      # Number of zones in X1-direction
+x1min     = 0.0       # minimum value of X1
+x1max     = 40.0      # maximum value of X1
+ix1_bc    = outflow   # Inner-X1 boundary condition flag
+ox1_bc    = outflow   # Outer-X1 boundary condition flag
+
+nx2       = 1         # Number of zones in X2-direction
+x2min     = -1.0      # minimum value of X2
+x2max     = 1.0       # maximum value of X2
+
+nx3       = 1         # Number of zones in X3-direction
+x3min     = -1.0      # minimum value of X3
+x3max     = 1.0       # maximum value of X3
+
+<meshblock>
+nx1       = 32        # Number of cells in each MeshBlock, X1-dir
+
+<time>
+evolution  = kinematic # dynamic/kinematic/static
+integrator = rk2       # time integration algorithm
+cfl_number = 0.3       # The Courant, Friedrichs, & Lewy (CFL) Number
+dt_max     = 100.0     # maximum timestep
+nlim       = -1        # cycle limit
+tlim       = 5e3       # time limit, in code units of ~0.978 Myr
+ndiag      = 1         # cycles between diagnostic output
+
+<hydro>
+eos             = ideal             # EOS type
+reconstruct     = plm               # spatial reconstruction method
+rsolver         = advect            # Riemann-solver to be used
+gamma           = 1.666666666666667 # gamma = C_p/C_v
+nscalars        = 0                 # number of passive scalars in hydro
+iso_sound_speed = 1.0               # sets the initial pressure, n_H * iso_sound_speed^2
+
+<units>
+# Athena++'s ISM units
+length_cgs  = 3.08567758e+18          # length is 1 pc
+mass_cgs    = 6.882615081124725e+31   # density is 1.4 m_H cm^-3
+time_cgs    = 3.08567758e+13          # time is 1 pc / (km/s)
+mu          = 1.27                    # mean molecular weight
+
+<chemistry>
+network                 = GOW17      # Chemistry network to be used
+ode_solver              = kokkos_BDF # ODE solver to be used
+kokkos_BDF_rtol         = 1e-2       # relative tolerance, as Athena++'s reltol
+kokkos_BDF_atol         = 1e-12      # absolute tolerance. Athena++ uses 1e-15, but below
+                                     # ~1e-12 round-off noise in trace species stalls
+                                     # the Kokkos Kernels BDF Newton iteration near equilibrium
+radiation_integrator    = six_ray    # radiation integrator
+radiation_G0            = 0.0        # Radiation field relative to Draine (1978)
+radiation_G0_inner_x1   = 6.0        # Radiation field entering through inner X1
+radiation_CR            = 2e-16      # Cosmic-ray ionization rate per H
+shielding_fraction_cell = 0.5        # fraction of a cell's own column that shields it
+
+# chemistry network parameters:
+GOW17_Leff_CO_max = 1.0e18      # max length scale in cm for CO LVG cooling
+GOW17_Z_d         = 1.          # dust metallicity
+GOW17_Z_g         = 1.          # gas metallicity
+GOW17_xHe         = 0.1         # He per H, default = 0.1
+GOW17_xC          = 1.6e-4      # C atom per H, this is Z=1 value, default 1.6e-4
+GOW17_xO          = 3.2e-4      # O atom per H, this is Z=1 value, default 3.2e-4
+GOW17_xSi         = 1.7e-6      # Si atom per H, this is Z=1 value, default 1.7e-6
+
+<problem>
+pgen_name    = GOW17_uniform # problem generator name
+n_H          = 100.0         # density, in units of number density of hydrogen atoms
+vx_kms       = 0.0           # x-velocity, in km/s
+init_default = 1.0e-6        # initial abundances
+init_H2      = 0.4           # initial H2 abundance
+
+<output1>
+file_type   = tab       # Tabular data dump
+variable    = hydro_w   # variables to be output
+data_format = %.8e      # Optional data format string
+dt          = 5e3       # time increment between outputs, only the final output is tested
+slice_x2    = 0.0       # slice in x2
+slice_x3    = 0.0       # slice in x3

@@ -34,9 +34,19 @@ void Chemistry::AssembleChemistryTasks(
   id.init_recv =
       tl["after_timeintegrator"]->AddTask(&Chemistry::InitRecv, this, none);
 
+  // If the radiation built the six-ray scans then compute the column densities
+  // along all six rays before the chemistry integration. Bound to a named
+  // local since AddTask takes the dependency by non-const reference
+  TaskID update_chemistry_dep = none;
+  if (pchem_rad.scans) {
+    id.column_density_scans = tl["after_timeintegrator"]->AddTask(
+        &Radiation::ComputeColumnDensities, &pchem_rad, none);
+    update_chemistry_dep = id.column_density_scans;
+  }
+
   // Do the chemistry integration on the active cells
   id.update_chemistry = tl["after_timeintegrator"]->AddTask(
-      &Chemistry::UpdateChemistryTask, this, none);
+      &Chemistry::UpdateChemistryTask, this, update_chemistry_dep);
 
   // Update the conserved variables with the new values from the primitive
   // arrays. The ghost cells are then refreshed by the exchange below
@@ -88,23 +98,31 @@ void Chemistry::AssembleChemistryTasks(
  */
 TaskStatus Chemistry::UpdateChemistryTask(Driver* d, int stage) {
   const std::string network = my_pin->GetString("chemistry", "network");
-  const std::string ode_solver = my_pin->GetString("chemistry", "ode_solver");
 
   if (network == "H2") {
-    if (ode_solver == "forward_euler") {
-      UpdateChemistry<ode_solvers::ForwardEuler, H2Network>();
-    } else if (ode_solver == "kokkos_BDF") {
-      UpdateChemistry<ode_solvers::KokkosBDF, H2Network>();
-    }
+    UpdateChemistryWithSolver<H2Network, Radiation::NoRadiationFunc>();
   } else if (network == "GOW17") {
-    if (ode_solver == "forward_euler") {
-      UpdateChemistry<ode_solvers::ForwardEuler, GOW17Network>();
-    } else if (ode_solver == "kokkos_BDF") {
-      UpdateChemistry<ode_solvers::KokkosBDF, GOW17Network>();
+    if (pchem_rad.integrator == "six_ray") {
+      UpdateChemistryWithSolver<
+          GOW17Network, Radiation::ShieldedRadiationFunc<GOW17Network>>();
+    } else {
+      UpdateChemistryWithSolver<
+          GOW17Network, Radiation::ConstantRadiationFunc<GOW17Network>>();
     }
   }
 
   return TaskStatus::complete;
+}
+
+template <typename Network_t, typename RadFunc_t>
+void Chemistry::UpdateChemistryWithSolver() {
+  const std::string ode_solver = my_pin->GetString("chemistry", "ode_solver");
+
+  if (ode_solver == "forward_euler") {
+    UpdateChemistry<ode_solvers::ForwardEuler, Network_t, RadFunc_t>();
+  } else if (ode_solver == "kokkos_BDF") {
+    UpdateChemistry<ode_solvers::KokkosBDF, Network_t, RadFunc_t>();
+  }
 }
 
 /*!

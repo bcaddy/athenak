@@ -38,6 +38,7 @@ White space after the parameter name, after the `=`, and before the `#` characte
   * `nlim` (**mandatory**) : time step limit (-1 = infinity)
   * `tlim` (**mandatory**) : time limit in computing time
   * `start_time` (optional) : time at the beginning of new simulation (default = 0)
+  * `dt_max` (optional) : maximum timestep in computing time, applied after the CFL and other physics limits (default = no limit)
   * `integrator` (optional) : time-integration scheme. Choices:
     * `rk2` (*default*) : second-order accurate Runge-Kutta/Heun's method
     * `rk3` : third-order accurate Strong Stability Preserving (SSP) variant

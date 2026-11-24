@@ -142,6 +142,8 @@ add_executable(
         pgen/chemistry/H2_advection.cpp
         pgen/chemistry/H2_uniform.cpp
         pgen/chemistry/GOW17_uniform.cpp
+        pgen/chemistry/PDR_moving.cpp
+        pgen/chemistry/GOW17_decaying_turbulence.cpp
         pgen/tests/jeans_wave.cpp
         pgen/tests/binary_gravity.cpp
         pgen/tests/be_collapse.cpp

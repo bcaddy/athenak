@@ -7,6 +7,7 @@ different ODE solvers
 import pytest
 import test_suite.testutils as testutils
 import athena_read
+import bin_convert
 import pathlib
 import numpy as np
 
@@ -220,6 +221,118 @@ def run_gow17_cfl_dependence(ode_solver, mpi=False):
         testutils.cleanup()
 
 
+def run_pdr_regression(
+    basename, fiducial_file, mpi=False, mpi_ranks=None, cli_args=None, rtol=1e-6
+):
+    """Run a photodissociation region (PDR) test with six-ray radiation,
+    inputs/<basename>_test.athinput, and compare its final output to the known good
+    results from AthenaK in test_suite/chemistry/data/<fiducial_file>. mpi_ranks sets
+    the number of MPI ranks, which can't exceed the number of MeshBlocks; the default
+    is testutils.mpi_run's. cli_args are extra input file overrides and rtol is the
+    relative tolerance of the comparison."""
+    RUN = testutils.mpi_run if mpi else testutils.run
+    run_kwargs = {"threads": mpi_ranks} if mpi and mpi_ranks is not None else {}
+
+    try:
+        input_file = f"inputs/{basename}_test.athinput"
+        results = RUN(input_file, cli_args, **run_kwargs)
+        assert results, f"{basename} test run failed."
+
+        # Load the final output
+        data_path = sorted(pathlib.Path("./tab").glob(f"{basename}.hydro_w.*.tab"))[-1]
+        test_data = athena_read.tab(data_path)
+        fiducial_data = np.load(f"../../test_suite/chemistry/data/{fiducial_file}")
+
+        assert test_data["time"] == fiducial_data["time"], (
+            f"Final time was not correct. Expected {fiducial_data['time']}, got "
+            f"{test_data['time']}"
+        )
+        assert test_data["cycle"] == fiducial_data["cycle"], (
+            "The number of time steps is not correct. Expected "
+            f"{fiducial_data['cycle']} but found {test_data['cycle']}."
+        )
+
+        for key in fiducial_data.files:
+            if key in ["time", "cycle"]:
+                continue
+            assert test_data[key].shape == fiducial_data[key].shape, (
+                f"The {key} dataset has the wrong size."
+            )
+            # The atol matches kokkos_BDF_atol, below which abundances are not resolved
+            assert np.allclose(
+                test_data[key], fiducial_data[key], rtol=rtol, atol=1e-12
+            ), f"The {key} dataset contains incorrect value(s)."
+    finally:
+        testutils.cleanup()
+
+
+def run_pdr_adiabatic_regression(basename, fiducial_file, mpi=False, mpi_ranks=None):
+    """Run an adiabatic moving PDR test with the settings of Gong et al. (2023).
+    GOW17_isothermal=true turns off heating and cooling, so the gas evolves
+    adiabatically, and fixes the temperature used by the chemistry at 40 K, set by
+    iso_sound_speed and GOW17_mu_iso in the test input files.
+
+    The comparison uses rtol=1e-5. With these settings the ODE solver's
+    (kokkos_BDF_rtol=1e-2) step control can take different paths on CPU and GPU, so CO
+    differs between them by up to ~3e-6 in a few cells of the uniform mesh test."""
+    run_pdr_regression(
+        basename,
+        fiducial_file,
+        mpi=mpi,
+        mpi_ranks=mpi_ranks,
+        cli_args=["chemistry/GOW17_isothermal=true"],
+        rtol=1e-5,
+    )
+
+
+def run_decaying_turbulence_regression(mpi=False):
+    """Run the decaying turbulence test, with adaptive mesh refinement and six-ray
+    radiation, and compare the final state of every MeshBlock to the known good
+    results from AthenaK in test_suite/chemistry/data/gow17_decaying_turbulence.npz.
+    The mesh has to match too, so the same MeshBlocks must have been refined. With MPI
+    it uses 8 ranks, one per root MeshBlock."""
+    RUN = testutils.mpi_run if mpi else testutils.run
+    run_kwargs = {"threads": 8} if mpi else {}
+
+    try:
+        results = RUN("inputs/GOW17_decaying_turbulence_test.athinput", **run_kwargs)
+        assert results, "GOW17 decaying turbulence test run failed."
+
+        test_data = bin_convert.read_binary(
+            "bin/GOW17_decaying_turbulence.hydro_w.00001.bin"
+        )
+        with np.load(
+            "../../test_suite/chemistry/data/gow17_decaying_turbulence.npz"
+        ) as fiducial_data:
+            assert test_data["time"] == fiducial_data["time"], (
+                f"Final time was not correct. Expected {fiducial_data['time']}, got "
+                f"{test_data['time']}"
+            )
+            assert test_data["cycle"] == fiducial_data["cycle"], (
+                "The number of time steps is not correct. Expected "
+                f"{fiducial_data['cycle']} but found {test_data['cycle']}."
+            )
+            assert np.array_equal(
+                test_data["mb_logical"], fiducial_data["mb_logical"]
+            ), "The mesh does not match: the MeshBlocks or refinement levels differ."
+
+            for key in test_data["var_names"]:
+                test_arr = np.stack(test_data["mb_data"][key])
+                fiducial_arr = fiducial_data[key]
+                assert test_arr.shape == fiducial_arr.shape, (
+                    f"The {key} dataset has the wrong size."
+                )
+                # CPU and GPU builds, gcc and clang, and any number of MPI ranks agree
+                # to better than 5e-7 relative (MPI and serial CPU are bit-identical).
+                # The atol matches kokkos_BDF_atol, below which abundances are not
+                # resolved.
+                assert np.allclose(test_arr, fiducial_arr, rtol=1e-5, atol=1e-15), (
+                    f"The {key} dataset contains incorrect value(s)."
+                )
+    finally:
+        testutils.cleanup()
+
+
 @pytest.mark.parametrize("ode_solver", ode_solvers)
 def test_gow17_uniform_gpu(ode_solver):
     """GPU Test for GOW17 uniform test problem."""
@@ -236,3 +349,33 @@ def test_gow17_cfl_dependence_cpu(ode_solver):
 def test_gow17_uniform_time_series_cpu(ode_solver):
     """CPU Test for GOW17 time series problem."""
     run_gow17_uniform_time_series(ode_solver)
+
+
+def test_pdr_static_gpu():
+    """GPU Test for the static PDR test problem."""
+    run_pdr_regression("PDR_static", "pdr_static.npz")
+
+
+def test_pdr_moving_gpu():
+    """GPU Test for the moving PDR test problem."""
+    run_pdr_regression("PDR_moving", "pdr_moving.npz")
+
+
+def test_pdr_moving_amr_gpu():
+    """GPU Test for the moving PDR test problem with AMR."""
+    run_pdr_regression("PDR_moving_amr", "pdr_moving_amr.npz")
+
+
+def test_pdr_moving_adiabatic_gpu():
+    """GPU Test for the adiabatic moving PDR test problem."""
+    run_pdr_adiabatic_regression("PDR_moving", "pdr_moving_adiabatic.npz")
+
+
+def test_pdr_moving_amr_adiabatic_gpu():
+    """GPU Test for the adiabatic moving PDR test problem with AMR."""
+    run_pdr_adiabatic_regression("PDR_moving_amr", "pdr_moving_amr_adiabatic.npz")
+
+
+def test_decaying_turbulence_gpu():
+    """GPU Test for the decaying turbulence test problem."""
+    run_decaying_turbulence_regression()
