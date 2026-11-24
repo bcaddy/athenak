@@ -51,3 +51,8 @@ def test_pdr_moving_amr_adiabatic_cpu():
     gow17_tests.run_pdr_adiabatic_regression(
         "PDR_moving_amr", "pdr_moving_amr_adiabatic.npz"
     )
+
+
+def test_decaying_turbulence_cpu():
+    """CPU Test for the decaying turbulence test problem."""
+    gow17_tests.run_decaying_turbulence_regression()
