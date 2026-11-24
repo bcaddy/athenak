@@ -7,6 +7,7 @@ different ODE solvers
 import pytest
 import test_suite.testutils as testutils
 import athena_read
+import bin_convert
 import pathlib
 import numpy as np
 
@@ -284,6 +285,54 @@ def run_pdr_adiabatic_regression(basename, fiducial_file, mpi=False, mpi_ranks=N
     )
 
 
+def run_decaying_turbulence_regression(mpi=False):
+    """Run the decaying turbulence test, with adaptive mesh refinement and six-ray
+    radiation, and compare the final state of every MeshBlock to the known good
+    results from AthenaK in test_suite/chemistry/data/gow17_decaying_turbulence.npz.
+    The mesh has to match too, so the same MeshBlocks must have been refined. With MPI
+    it uses 8 ranks, one per root MeshBlock."""
+    RUN = testutils.mpi_run if mpi else testutils.run
+    run_kwargs = {"threads": 8} if mpi else {}
+
+    try:
+        results = RUN("inputs/GOW17_decaying_turbulence_test.athinput", **run_kwargs)
+        assert results, "GOW17 decaying turbulence test run failed."
+
+        test_data = bin_convert.read_binary(
+            "bin/GOW17_decaying_turbulence.hydro_w.00001.bin"
+        )
+        with np.load(
+            "../../test_suite/chemistry/data/gow17_decaying_turbulence.npz"
+        ) as fiducial_data:
+            assert test_data["time"] == fiducial_data["time"], (
+                f"Final time was not correct. Expected {fiducial_data['time']}, got "
+                f"{test_data['time']}"
+            )
+            assert test_data["cycle"] == fiducial_data["cycle"], (
+                "The number of time steps is not correct. Expected "
+                f"{fiducial_data['cycle']} but found {test_data['cycle']}."
+            )
+            assert np.array_equal(
+                test_data["mb_logical"], fiducial_data["mb_logical"]
+            ), "The mesh does not match: the MeshBlocks or refinement levels differ."
+
+            for key in test_data["var_names"]:
+                test_arr = np.stack(test_data["mb_data"][key])
+                fiducial_arr = fiducial_data[key]
+                assert test_arr.shape == fiducial_arr.shape, (
+                    f"The {key} dataset has the wrong size."
+                )
+                # CPU and GPU builds, gcc and clang, and any number of MPI ranks agree
+                # to better than 5e-7 relative (MPI and serial CPU are bit-identical).
+                # The atol matches kokkos_BDF_atol, below which abundances are not
+                # resolved.
+                assert np.allclose(test_arr, fiducial_arr, rtol=1e-5, atol=1e-15), (
+                    f"The {key} dataset contains incorrect value(s)."
+                )
+    finally:
+        testutils.cleanup()
+
+
 @pytest.mark.parametrize("ode_solver", ode_solvers)
 def test_gow17_uniform_gpu(ode_solver):
     """GPU Test for GOW17 uniform test problem."""
@@ -325,3 +374,8 @@ def test_pdr_moving_adiabatic_gpu():
 def test_pdr_moving_amr_adiabatic_gpu():
     """GPU Test for the adiabatic moving PDR test problem with AMR."""
     run_pdr_adiabatic_regression("PDR_moving_amr", "pdr_moving_amr_adiabatic.npz")
+
+
+def test_decaying_turbulence_gpu():
+    """GPU Test for the decaying turbulence test problem."""
+    run_decaying_turbulence_regression()

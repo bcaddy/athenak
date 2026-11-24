@@ -45,3 +45,9 @@ def test_pdr_moving_amr_adiabatic_mpicpu():
     gow17_tests.run_pdr_adiabatic_regression(
         "PDR_moving_amr", "pdr_moving_amr_adiabatic.npz", mpi=True, mpi_ranks=8
     )
+
+
+def test_decaying_turbulence_mpicpu():
+    """MPI-CPU Test for the decaying turbulence test problem. Uses 8 ranks since the
+    mesh starts with 8 MeshBlocks."""
+    gow17_tests.run_decaying_turbulence_regression(mpi=True)

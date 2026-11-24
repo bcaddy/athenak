@@ -1,0 +1,108 @@
+# AthenaXXX input file for decaying turbulence with the GOW17 network, in a single
+# run, with adaptive mesh refinement on the density gradient and six-ray radiation
+# illuminating every face of the box with radiation_G0.
+
+<comment>
+problem   = Decaying turbulence with chemistry, AMR and six-ray radiation
+reference = Single-run form of tests/turb-box-athenak-vs-athenapp in
+            jeonggyukim/athenak-photchem
+
+<job>
+basename  = GOW17_decaying_turbulence # problem ID: basename of output filenames
+
+<mesh>
+nghost    = 2         # Number of ghost cells
+nx1       = 32        # Number of zones in X1-direction
+x1min     = -16.0     # minimum value of X1, in pc
+x1max     = 16.0      # maximum value of X1, in pc
+ix1_bc    = periodic  # Inner-X1 boundary condition flag
+ox1_bc    = periodic  # Outer-X1 boundary condition flag
+
+nx2       = 32        # Number of zones in X2-direction
+x2min     = -16.0     # minimum value of X2, in pc
+x2max     = 16.0      # maximum value of X2, in pc
+ix2_bc    = periodic  # Inner-X2 boundary condition flag
+ox2_bc    = periodic  # Outer-X2 boundary condition flag
+
+nx3       = 32        # Number of zones in X3-direction
+x3min     = -16.0     # minimum value of X3, in pc
+x3max     = 16.0      # maximum value of X3, in pc
+ix3_bc    = periodic  # Inner-X3 boundary condition flag
+ox3_bc    = periodic  # Outer-X3 boundary condition flag
+
+<meshblock>
+nx1       = 8         # Number of cells in each MeshBlock, X1-dir
+nx2       = 8         # Number of cells in each MeshBlock, X2-dir
+nx3       = 8         # Number of cells in each MeshBlock, X3-dir
+
+<mesh_refinement>
+refinement          = adaptive # type of refinement
+num_levels          = 2        # one level above the root grid
+refinement_interval = 1        # cycles between refinement checks
+max_nmb_per_rank    = 1024     # maximum number of MeshBlocks per rank
+
+<amr_criterion0>
+method    = slope     # refine on the normalized density gradient
+variable  = hydro_w_d # density
+value_max = 1.0       # the density starts uniform, so refinement starts as the
+                      # turbulence compresses the gas; blocks both refine and
+                      # derefine, and the run ends with a mix of levels
+
+<time>
+evolution  = dynamic   # dynamic/kinematic/static
+integrator = rk2       # time integration algorithm
+cfl_number = 0.3       # The Courant, Friedrichs, & Lewy (CFL) Number
+nlim       = -1        # cycle limit
+tlim       = 2.0      # time limit, 1 code unit = 0.978 Myr
+ndiag      = 10        # cycles between diagnostic output
+
+<hydro>
+eos         = ideal             # EOS type
+reconstruct = plm               # spatial reconstruction method
+rsolver     = hllc              # Riemann-solver to be used
+gamma       = 1.666666666666667 # gamma = C_p/C_v
+dfloor      = 1.0e-1            # density floor
+pfloor      = 1.0e+0            # pressure floor
+
+<units>
+# ISM units
+length_cgs  = 3.0856775809623245e+18  # length is 1 pc
+mass_cgs    = 6.882615081124725e+31   # number density is 1 cm^-3
+time_cgs    = 3.08567758e+13          # time is 0.978 Myr, velocity is 1 km/s
+
+<chemistry>
+network              = GOW17      # Chemistry network to be used
+ode_solver           = kokkos_BDF # ODE solver to be used
+radiation_integrator = six_ray    # radiation integrator
+radiation_G0         = 1.0        # Radiation field relative to Draine (1978), incident
+                                  # on every face of the box
+radiation_CR         = 2.0e-16    # Cosmic-ray ionization rate per H
+is_kgrH2_const       = true       # constant H2 formation rate on grains
+
+# chemistry network parameters:
+GOW17_Z_d = 1.0     # dust metallicity
+GOW17_Z_g = 1.0     # gas metallicity
+GOW17_xHe = 0.1     # He per H
+GOW17_xC  = 1.6e-4  # C atom per H
+GOW17_xO  = 3.2e-4  # O atom per H
+GOW17_xSi = 1.7e-6  # Si atom per H
+
+# chemistry solver parameters, the CVODE tolerances of the Athena++ comparison
+kokkos_BDF_rtol = 1.0e-2  # relative tolerance
+kokkos_BDF_atol = 1.0e-15 # absolute tolerance
+
+<problem>
+pgen_name    = GOW17_decaying_turbulence # problem generator name
+n_H          = 10.0      # hydrogen number density, in cm^-3
+T_init       = 1.0e4     # initial temperature, in K
+v_rms        = 8.0       # rms of the initial velocity field, in km/s
+nlow         = 1         # smallest |n| of the velocity modes, k = 2 pi n / L
+nhigh        = 2         # largest |n| of the velocity modes
+expo         = 1.666666666666667 # mode amplitudes scale as |n|^-(expo+2)/2
+seed         = 1         # seed of the velocity field
+init_default = 1.0e-6    # initial abundances
+
+<output1>
+file_type = bin       # Binary data dump
+variable  = hydro_w   # variables to be output
+dt        = 0.01      # time increment between outputs, only the final output is tested
