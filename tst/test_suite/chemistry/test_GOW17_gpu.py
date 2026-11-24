@@ -220,18 +220,21 @@ def run_gow17_cfl_dependence(ode_solver, mpi=False):
         testutils.cleanup()
 
 
-def run_pdr_regression(basename, fiducial_file, mpi=False, mpi_ranks=None):
+def run_pdr_regression(
+    basename, fiducial_file, mpi=False, mpi_ranks=None, cli_args=None, rtol=1e-6
+):
     """Run a photodissociation region (PDR) test with six-ray radiation,
     inputs/<basename>_test.athinput, and compare its final output to the known good
     results from AthenaK in test_suite/chemistry/data/<fiducial_file>. mpi_ranks sets
     the number of MPI ranks, which can't exceed the number of MeshBlocks; the default
-    is testutils.mpi_run's."""
+    is testutils.mpi_run's. cli_args are extra input file overrides and rtol is the
+    relative tolerance of the comparison."""
     RUN = testutils.mpi_run if mpi else testutils.run
     run_kwargs = {"threads": mpi_ranks} if mpi and mpi_ranks is not None else {}
 
     try:
         input_file = f"inputs/{basename}_test.athinput"
-        results = RUN(input_file, **run_kwargs)
+        results = RUN(input_file, cli_args, **run_kwargs)
         assert results, f"{basename} test run failed."
 
         # Load the final output
@@ -256,10 +259,29 @@ def run_pdr_regression(basename, fiducial_file, mpi=False, mpi_ranks=None):
             )
             # The atol matches kokkos_BDF_atol, below which abundances are not resolved
             assert np.allclose(
-                test_data[key], fiducial_data[key], rtol=1e-6, atol=1e-12
+                test_data[key], fiducial_data[key], rtol=rtol, atol=1e-12
             ), f"The {key} dataset contains incorrect value(s)."
     finally:
         testutils.cleanup()
+
+
+def run_pdr_adiabatic_regression(basename, fiducial_file, mpi=False, mpi_ranks=None):
+    """Run an adiabatic moving PDR test with the settings of Gong et al. (2023).
+    GOW17_isothermal=true turns off heating and cooling, so the gas evolves
+    adiabatically, and fixes the temperature used by the chemistry at 40 K, set by
+    iso_sound_speed and GOW17_mu_iso in the test input files.
+
+    The comparison uses rtol=1e-5. With these settings the ODE solver's
+    (kokkos_BDF_rtol=1e-2) step control can take different paths on CPU and GPU, so CO
+    differs between them by up to ~3e-6 in a few cells of the uniform mesh test."""
+    run_pdr_regression(
+        basename,
+        fiducial_file,
+        mpi=mpi,
+        mpi_ranks=mpi_ranks,
+        cli_args=["chemistry/GOW17_isothermal=true"],
+        rtol=1e-5,
+    )
 
 
 @pytest.mark.parametrize("ode_solver", ode_solvers)
@@ -293,3 +315,13 @@ def test_pdr_moving_gpu():
 def test_pdr_moving_amr_gpu():
     """GPU Test for the moving PDR test problem with AMR."""
     run_pdr_regression("PDR_moving_amr", "pdr_moving_amr.npz")
+
+
+def test_pdr_moving_adiabatic_gpu():
+    """GPU Test for the adiabatic moving PDR test problem."""
+    run_pdr_adiabatic_regression("PDR_moving", "pdr_moving_adiabatic.npz")
+
+
+def test_pdr_moving_amr_adiabatic_gpu():
+    """GPU Test for the adiabatic moving PDR test problem with AMR."""
+    run_pdr_adiabatic_regression("PDR_moving_amr", "pdr_moving_amr_adiabatic.npz")

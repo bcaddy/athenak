@@ -39,3 +39,15 @@ def test_pdr_moving_cpu():
 def test_pdr_moving_amr_cpu():
     """CPU Test for the moving PDR test problem with AMR."""
     gow17_tests.run_pdr_regression("PDR_moving_amr", "pdr_moving_amr.npz")
+
+
+def test_pdr_moving_adiabatic_cpu():
+    """CPU Test for the adiabatic moving PDR test problem."""
+    gow17_tests.run_pdr_adiabatic_regression("PDR_moving", "pdr_moving_adiabatic.npz")
+
+
+def test_pdr_moving_amr_adiabatic_cpu():
+    """CPU Test for the adiabatic moving PDR test problem with AMR."""
+    gow17_tests.run_pdr_adiabatic_regression(
+        "PDR_moving_amr", "pdr_moving_amr_adiabatic.npz"
+    )

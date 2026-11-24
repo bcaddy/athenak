@@ -40,6 +40,7 @@ eos         = ideal             # EOS type
 reconstruct = plm               # spatial reconstruction method
 rsolver     = hllc              # Riemann-solver to be used
 gamma       = 1.666666666666667 # gamma = C_p/C_v
+iso_sound_speed = 0.376068874   # only used if GOW17_isothermal, 40 K with GOW17_mu_iso
 
 <units>
 # ISM units
@@ -55,6 +56,8 @@ radiation_G0            = 0.         # Radiation field relative to Draine (1978)
 radiation_G0_inner_x1   = 6.         # Radiation field at the inner x1 boundary
 radiation_G0_outer_x1   = 6.         # Radiation field at the outer x1 boundary
 radiation_CR            = 2e-16      # Cosmic-ray ionization rate per H
+GOW17_isothermal        = false      # true in the adiabatic tests, as in Gong et al. 2023
+GOW17_mu_iso            = 2.33333333333 # only used if GOW17_isothermal
 shielding_fraction_cell = 0.5        # Fraction of each cell's column shielding itself
 
 # chemistry network parameters:
