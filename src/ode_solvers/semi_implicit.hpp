@@ -10,11 +10,13 @@
 //  creation and destruction rates
 
 #include <algorithm>
+#include <iostream>
 #include <string>
 #include <type_traits>
 #include <utility>
 
 #include "athena.hpp"
+#include "globals.hpp"
 
 namespace ode_solvers {
 
@@ -87,6 +89,8 @@ struct UsesUpdateSpecies<ode_t,
  *   - `StepLimitingSpecies`, the species whose relative change limits the
  *     substep, in the same form. Species that relax to equilibrium within a
  *     substep should not be listed; backward Euler carries them there anyway.
+ *     The list may be empty; the substep is then limited only by the energy
+ *     timescale.
  *   - `SetupNextStep(y)`, which prepares the rate coefficients for a substep
  *     and returns the ghost species (abundances not stored in `y` but set by
  *     element conservation), or an empty struct if there are none.
@@ -156,6 +160,14 @@ class SemiImplicit {
    */
   static SemiImplicitSettings GetSettings(ParameterInput* pin,
                                           std::string module) {
+    if constexpr (ode_t::StepLimitingSpecies::size() == 0) {
+      if (global_variable::my_rank == 0) {
+        std::cout << "### WARNING in " << __FILE__ << " at line " << __LINE__
+                  << std::endl
+                  << "StepLimitingSpecies is empty; the substep is limited only "
+                  << "by the energy timescale" << std::endl;
+      }
+    }
     return SemiImplicitSettings{
         pin->GetOrAddReal(module, "semi_implicit_dt_sub_frac", 0.1),
         pin->GetOrAddReal(module, "semi_implicit_yfloor", 1.0e-12),
